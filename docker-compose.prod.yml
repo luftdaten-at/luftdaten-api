@@ -1,0 +1,26 @@
+version: '3'
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.prod
+    container_name: apiluftdatenat
+    expose:
+      - 80
+    volumes:
+      - .:/app
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.apiluftdatenat.entrypoints=https"
+      - "traefik.http.routers.apiluftdatenat.rule=(Host(`api.luftdaten.at`))"
+      - "traefik.http.routers.apiluftdatenat.tls=true"
+      - "traefik.http.routers.apiluftdatenat.tls.certresolver=http"
+      - "traefik.http.routers.apiluftdatenat.service=apiluftdatenat"
+      - "traefik.http.services.apiluftdatenat.loadbalancer.server.port=80"
+      - "traefik.docker.network=proxy"
+      - "traefik.http.routers.apiluftdatenat.middlewares=default@file"
+    networks:
+      - proxy
+networks:
+  proxy:
+    external: true
