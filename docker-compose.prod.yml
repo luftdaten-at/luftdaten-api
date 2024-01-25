@@ -4,23 +4,34 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.prod
-    container_name: apiluftdatenat
+    container_name: luftdaten-api-app
     expose:
       - 80
-    volumes:
-      - .:/app
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.apiluftdatenat.entrypoints=https"
-      - "traefik.http.routers.apiluftdatenat.rule=(Host(`api.luftdaten.at`))"
-      - "traefik.http.routers.apiluftdatenat.tls=true"
-      - "traefik.http.routers.apiluftdatenat.tls.certresolver=http"
-      - "traefik.http.routers.apiluftdatenat.service=apiluftdatenat"
-      - "traefik.http.services.apiluftdatenat.loadbalancer.server.port=80"
+      - "traefik.http.routers.luftdaten-api.entrypoints=https"
+      - "traefik.http.routers.luftdaten-api.rule=(Host(`api.luftdaten.at`))"
+      - "traefik.http.routers.luftdaten-api.tls=true"
+      - "traefik.http.routers.luftdaten-api.tls.certresolver=http"
+      - "traefik.http.routers.luftdaten-api.service=luftdaten-api"
+      - "traefik.http.services.luftdaten-api.loadbalancer.server.port=80"
       - "traefik.docker.network=proxy"
-      - "traefik.http.routers.apiluftdatenat.middlewares=default@file"
+      - "traefik.http.routers.luftdaten-api.middlewares=default@file"
     networks:
       - proxy
+#    depends_on:
+#      - db
+    env_file:
+      - .env
+#  db:
+#    image: postgres:16
+#    container_name: luftdaten-api-db
+#    volumes:
+#      - postgres_data:/var/lib/postgresql/data
+#    env_file:
+#      - .env
+#volumes:
+#  postgres_data:  
 networks:
   proxy:
     external: true

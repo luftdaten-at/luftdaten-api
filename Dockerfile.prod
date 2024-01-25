@@ -1,8 +1,19 @@
-FROM tiangolo/uvicorn-gunicorn:python3.11-slim
+FROM python:3-alpine
 
-RUN apt-get update && apt-get install -y netcat
+# Set the working directory in the container
+WORKDIR /usr/src/app
+
+# set env variables
+ENV PYTHONDONTWRITEBYTECODE 1
+ENV PYTHONUNBUFFERED 1
+
+RUN apk update && apk add netcat-openbsd
 
 COPY requirements.txt .
+RUN pip install --upgrade pip
 RUN pip install -r requirements.txt
 
-COPY . .
+# Copy the FastAPI application code into the container
+COPY ./code .
+
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "80"]
