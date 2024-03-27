@@ -1,0 +1,4 @@
+# API test request for the endpoint /station/current/all
+# 
+
+GET http://localhost:8080/v1/station/current/all/ HTTP/1.1
