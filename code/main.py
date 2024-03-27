@@ -17,6 +17,9 @@ origins = ["*"]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["*"],
 )
 
 
@@ -35,6 +38,6 @@ async def get_history_station_data(station_ids: str = None, smooth: str = "100",
     """
     Returns the values from a single station in a given time.
     """
-    csv_url = f"https://dev.luftdaten.at/d/station/history?sid=${station_ids}&smooth={smooth}&from=${start}"
+    csv_url = f"https://dev.luftdaten.at/d/station/history?sid={station_ids}&smooth={smooth}&from={start}"
     csv_data = download_csv(csv_url)
     return Response(content=csv_data, media_type="text/csv")
