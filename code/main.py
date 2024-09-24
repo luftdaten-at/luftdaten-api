@@ -3,9 +3,8 @@ from fastapi.middleware.cors import CORSMiddleware
 import requests
 from sqlalchemy.orm import Session
 from database import SessionLocal
-from schemas import StationDataCreate, SensorDataCreate
-from typing import List
 
+from schemas import StationDataCreate, SensorDataCreate
 from models import Station, Measurement
 
 
@@ -56,58 +55,58 @@ async def get_history_station_data(
     csv_data = download_csv(csv_url)
     return Response(content=csv_data, media_type="text/csv")
 
-@app.get("/v1/city/current", response_class=Response)
-async def get_current_station_data(
-    city: str = None
-):
-    data = ""
-    return Response(content=data, media_type="application/json")
+# @app.get("/v1/city/current/", response_class=Response)
+# async def get_current_station_data(
+#     city: str = None
+# ):
+#     data = ""
+#     return Response(content=data, media_type="application/json")
 
-@app.post("/v1/station/data/")
-async def create_station_data(
-    station_data: StationDataCreate, 
-    sensor_data: SensorDataCreate, 
-    db: Session = Depends(get_db)
-):
-    # Prüfen, ob die Station bereits existiert
-    db_station = db.query(Station).filter(Station.device == station_data.device).first()
+# @app.post("/v1/station/data/")
+# async def create_station_data(
+#     station_data: StationDataCreate, 
+#     sensor_data: SensorDataCreate, 
+#     db: Session = Depends(get_db)
+# ):
+#     # Prüfen, ob die Station bereits existiert
+#     db_station = db.query(Station).filter(Station.device == station_data.device).first()
 
-    if db_station is None:
-        # Neue Station anlegen
-        db_station = Station(
-            device=station_data.device,
-            apikey=station_data.apikey,
-            lat=station_data.location.lat,
-            lon=station_data.location.lon,
-            height=station_data.location.height,
-            time=station_data.time
-        )
-        db.add(db_station)
-        db.commit()
-        db.refresh(db_station)
+#     if db_station is None:
+#         # Neue Station anlegen
+#         db_station = Station(
+#             device=station_data.device,
+#             apikey=station_data.apikey,
+#             lat=station_data.location.lat,
+#             lon=station_data.location.lon,
+#             height=station_data.location.height,
+#             time=station_data.time
+#         )
+#         db.add(db_station)
+#         db.commit()
+#         db.refresh(db_station)
 
-    # Durch alle Sensoren iterieren
-    for sensor_name, measurement in sensor_data.sensors.items():
-        # Messung für jeden Sensor hinzufügen
-        db_measurement = Measurement(
-            sensor_model=int(sensor_name[3:]),  # Extract sensor model number from sensor key (e.g., sen1 -> 1)
-            dimension=measurement.dim,
-            value=measurement.val,
-            additional_value=measurement.val2 if measurement.val2 is not None else None,
-            station_id=db_station.id
-        )
-        db.add(db_measurement)
+#     # Durch alle Sensoren iterieren
+#     for sensor_name, measurement in sensor_data.sensors.items():
+#         # Messung für jeden Sensor hinzufügen
+#         db_measurement = Measurement(
+#             sensor_model=int(sensor_name[3:]),  # Extract sensor model number from sensor key (e.g., sen1 -> 1)
+#             dimension=measurement.dim,
+#             value=measurement.val,
+#             additional_value=measurement.val2 if measurement.val2 is not None else None,
+#             station_id=db_station.id
+#         )
+#         db.add(db_measurement)
 
-        # Optional: Füge die zweite Dimension hinzu, falls vorhanden
-        if measurement.dim2 and measurement.val2:
-            db_measurement_dim2 = Measurement(
-                sensor_model=int(sensor_name[3:]),
-                dimension=measurement.dim2,
-                value=measurement.val2,
-                station_id=db_station.id
-            )
-            db.add(db_measurement_dim2)
+#         # Optional: Füge die zweite Dimension hinzu, falls vorhanden
+#         if measurement.dim2 and measurement.val2:
+#             db_measurement_dim2 = Measurement(
+#                 sensor_model=int(sensor_name[3:]),
+#                 dimension=measurement.dim2,
+#                 value=measurement.val2,
+#                 station_id=db_station.id
+#             )
+#             db.add(db_measurement_dim2)
 
-    db.commit()
+#     db.commit()
 
-    return {"status": "success"}
+#     return {"status": "success"}
