@@ -10,6 +10,22 @@ Development version:
 
     docker compose up -d
 
+
+### Database migration
+Setup alembic folder and config files:
+    
+    docker compose exec app alembic init alembic
+
+Generate and apply migrations:
+    
+    docker compose exec app alembic revision --autogenerate -m "Initial migration"
+    docker compose exec app alembic upgrade head
+
+Rollback migrations:
+    
+    docker compose exec app alembic downgrade
+
+
 ### Production
 
 Build and push to Dockerhub.

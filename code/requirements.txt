@@ -1,19 +1,10 @@
-alembic==1.13.1
-# anyio>=3.7
-# certifi==2023.7.22
-# charset-normalizer==3.3.2
-# #click==8.1.3
-python-decouple==3.8
-fastapi==0.110
-gunicorn==21.2.0
-# h11==0.14.0
-# idna==3.4
-psycopg2-binary>=2.9
-# pydantic>=2.4
-requests==2.31.0
-# sniffio==1.3.0
-sqlalchemy==2.0.29
-# #starlette==0.27.0
-# typing_extensions==4.8.0
-# urllib3>=2.0
-uvicorn==0.29
+fastapi
+uvicorn
+pydantic
+python-multipart
+python-decouple
+psycopg2-binary
+sqlalchemy
+requests
+#starlette
+alembic
