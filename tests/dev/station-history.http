@@ -1,4 +1,4 @@
 # API test request for the endpoint /station/current/all
 # 
 
-GET http://localhost:8080/v1/station/history?station_ids=85619&start=2024-03-12T13:23:07.015Z HTTP/1.1
+GET http://localhost/v1/station/history?station_ids=85619&start=2024-03-12T13:23:07.015Z HTTP/1.1

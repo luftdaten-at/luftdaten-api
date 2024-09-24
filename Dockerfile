@@ -1,5 +1,5 @@
 # Use an official Python runtime as the base image
-FROM python:3-alpine
+FROM python:3.12-alpine
 
 # Set timezone
 ENV TZ=Europe/Vienna
