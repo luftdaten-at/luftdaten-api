@@ -23,6 +23,7 @@ class Measurement(Base):
     sensor_model = Column(Integer)
     station_id = Column(Integer, ForeignKey('stations.id'))
     station = relationship("Station", back_populates="measurements")
+    values = relationship("Values", back_populates="measurement")
 
 
 class Values(Base):

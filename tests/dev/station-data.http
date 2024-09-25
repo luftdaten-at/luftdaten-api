@@ -1,0 +1,21 @@
+# API test request for the endpoint /v1/station/data
+# 
+
+POST http://localhost/v1/station/data/ HTTP/1.1
+content-type: application/json
+
+{
+    "station": {
+        "time": "2024-04-29T08:25:20.766Z",
+        "device": "00112233AABB",
+        "location": {
+            "lat": 48.20194899118805,
+            "lon": 16.337324948208195,
+            "height": 5.3
+        }
+    },
+    "sensors": {
+        "1": { "type": 1, "data": { "2": 5.0, "3": 6.0, "5": 7.0, "6": 0.67, "7": 20.0, "8": 100 }},
+        "2": { "type": 6, "data": { "6": 0.72, "7": 20.1 }}
+    }
+}
