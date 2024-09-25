@@ -4,8 +4,8 @@ import requests
 from sqlalchemy.orm import Session
 from database import SessionLocal
 
-from schemas import StationDataCreate, SensorDataCreate
-from models import Station, Measurement
+from schemas import StationDataCreate, SensorsCreate
+from models import Station, Measurement, Values
 
 
 def download_csv(url: str):
@@ -62,51 +62,47 @@ async def get_history_station_data(
 #     data = ""
 #     return Response(content=data, media_type="application/json")
 
-# @app.post("/v1/station/data/")
-# async def create_station_data(
-#     station_data: StationDataCreate, 
-#     sensor_data: SensorDataCreate, 
-#     db: Session = Depends(get_db)
-# ):
-#     # Prüfen, ob die Station bereits existiert
-#     db_station = db.query(Station).filter(Station.device == station_data.device).first()
+@app.post("/v1/station/data/")
+async def create_station_data(
+    station: StationDataCreate, 
+    sensors: SensorsCreate, 
+    db: Session = Depends(get_db)
+):
+    # Prüfen, ob die Station bereits existiert
+    db_station = db.query(Station).filter(Station.device == station.device).first()
 
-#     if db_station is None:
-#         # Neue Station anlegen
-#         db_station = Station(
-#             device=station_data.device,
-#             apikey=station_data.apikey,
-#             lat=station_data.location.lat,
-#             lon=station_data.location.lon,
-#             height=station_data.location.height,
-#             time=station_data.time
-#         )
-#         db.add(db_station)
-#         db.commit()
-#         db.refresh(db_station)
+    if db_station is None:
+        # Neue Station anlegen
+        db_station = Station(
+            device=station.device,
+            lat=station.location.lat,
+            lon=station.location.lon,
+            height=float(station.location.height),
+            time=station.time
+        )
+        db.add(db_station)
+        db.commit()
+        db.refresh(db_station)
 
-#     # Durch alle Sensoren iterieren
-#     for sensor_name, measurement in sensor_data.sensors.items():
-#         # Messung für jeden Sensor hinzufügen
-#         db_measurement = Measurement(
-#             sensor_model=int(sensor_name[3:]),  # Extract sensor model number from sensor key (e.g., sen1 -> 1)
-#             dimension=measurement.dim,
-#             value=measurement.val,
-#             additional_value=measurement.val2 if measurement.val2 is not None else None,
-#             station_id=db_station.id
-#         )
-#         db.add(db_measurement)
+    # Durch alle Sensoren iterieren
+    for sensor_id, sensor_data in sensors.root.items():
+        db_measurement = Measurement(
+            sensor_model=sensor_data.type,
+            station_id=db_station.id
+        )
+        db.add(db_measurement)
+        db.commit()
+        db.refresh(db_measurement)
 
-#         # Optional: Füge die zweite Dimension hinzu, falls vorhanden
-#         if measurement.dim2 and measurement.val2:
-#             db_measurement_dim2 = Measurement(
-#                 sensor_model=int(sensor_name[3:]),
-#                 dimension=measurement.dim2,
-#                 value=measurement.val2,
-#                 station_id=db_station.id
-#             )
-#             db.add(db_measurement_dim2)
+        # Werte (dimension, value) für die Messung hinzufügen
+        for dimension, value in sensor_data.data.items():
+            db_value = Values(
+                dimension=dimension,
+                value=value,
+                measurement_id=db_measurement.id
+            )
+            db.add(db_value)
 
-#     db.commit()
+    db.commit()
 
-#     return {"status": "success"}
+    return {"status": "success"}

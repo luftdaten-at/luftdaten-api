@@ -1,17 +1,17 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, RootModel
 from typing import Dict, Optional
 from datetime import datetime
 
 
-class MeasurementCreate(BaseModel):
-    dim: int
-    val: float
+class ValueCreate(BaseModel):
+    dimension: int
+    value: float
 
 
 class LocationCreate(BaseModel):
     lat: float
     lon: float
-    height: float
+    height: float | None = None
 
 
 class StationDataCreate(BaseModel):
@@ -21,4 +21,9 @@ class StationDataCreate(BaseModel):
 
 
 class SensorDataCreate(BaseModel):
-    sensors: Dict[str, MeasurementCreate]
+    type: int  # Sensor type (z.B. 1 oder 6)
+    data: Dict[int, float]  # Dictionary der Daten (z.B., {2: 5.0, 3: 6.0, ...})
+
+
+class SensorsCreate(RootModel[Dict[int, SensorDataCreate]]):
+    pass
