@@ -6,9 +6,10 @@ content-type: application/json
 
 {
     "station": {
-        "time": "2024-04-29T08:25:20.766Z",
-        "device": "00112233AABB",
+        "time": "2024-09-27T23:02:20.766Z",
+        "device": "00112233AABDD",
         "firmware": "1.2",
+        "apikey": "aaaaaaaaaaaaaaaaaaaa",
         "location": {
             "lat": 48.20194899118805,
             "lon": 16.337324948208195,

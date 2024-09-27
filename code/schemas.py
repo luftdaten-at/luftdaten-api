@@ -17,6 +17,8 @@ class LocationCreate(BaseModel):
 class StationDataCreate(BaseModel):
     time: datetime
     device: str
+    firmware: str
+    apikey: str
     location: LocationCreate
 
 
