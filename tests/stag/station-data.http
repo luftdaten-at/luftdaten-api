@@ -1,7 +1,7 @@
 # API test request for the endpoint /v1/station/data
 # 
 
-POST http://localhost/v1/station/data/ HTTP/1.1
+POST https://staging.api.luftdaten.at/v1/station/data/ HTTP/1.1
 content-type: application/json
 
 {
