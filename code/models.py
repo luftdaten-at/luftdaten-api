@@ -8,11 +8,12 @@ class Station(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     device = Column(String, index=True, unique=True)
+    firmware = Column(String)
     apikey = Column(String)
     lat = Column(Float)
     lon = Column(Float)
+    last_active = Column(DateTime)
     height = Column(Float)
-    time = Column(DateTime)
     measurements = relationship("Measurement", back_populates="station")
 
 
@@ -20,6 +21,8 @@ class Measurement(Base):
     __tablename__ = "measurements"
 
     id = Column(Integer, primary_key=True, index=True)
+    time_received = Column(DateTime)
+    time_measured = Column(DateTime)
     sensor_model = Column(Integer)
     station_id = Column(Integer, ForeignKey('stations.id'))
     station = relationship("Station", back_populates="measurements")
