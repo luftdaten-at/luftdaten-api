@@ -3,6 +3,18 @@ from sqlalchemy.orm import relationship
 from database import Base
 
 
+class Location(Base):
+    __tablename__ = "locations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    lat = Column(Float)
+    lon = Column(Float)
+    height = Column(Float)
+    # Relationships:
+    stations = relationship("Station", back_populates="location")
+    measurements = relationship("Measurement", back_populates="location")
+
+
 class Station(Base):
     __tablename__ = "stations"
 
@@ -10,10 +22,10 @@ class Station(Base):
     device = Column(String, index=True, unique=True)
     firmware = Column(String)
     apikey = Column(String)
-    lat = Column(Float)
-    lon = Column(Float)
     last_active = Column(DateTime)
-    height = Column(Float)
+    # Relationships:
+    location_id = Column(Integer, ForeignKey('locations.id'))
+    location = relationship("Location", back_populates="stations")
     measurements = relationship("Measurement", back_populates="station")
 
 
@@ -24,6 +36,9 @@ class Measurement(Base):
     time_received = Column(DateTime)
     time_measured = Column(DateTime)
     sensor_model = Column(Integer)
+    # Relationships:
+    location_id = Column(Integer, ForeignKey('locations.id'))
+    location = relationship("Location", back_populates="measurements")
     station_id = Column(Integer, ForeignKey('stations.id'))
     station = relationship("Station", back_populates="measurements")
     values = relationship("Values", back_populates="measurement")
@@ -35,6 +50,7 @@ class Values(Base):
     id = Column(Integer, primary_key=True, index=True)
     dimension = Column(Integer)
     value = Column(Float)
+    # Relationships:
     measurement_id = Column(Integer, ForeignKey('measurements.id'))
     measurement = relationship("Measurement", back_populates="values")
     

@@ -9,11 +9,9 @@ from database import get_db
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 import json
-import csv
-import io
 
 from schemas import StationDataCreate, SensorsCreate
-from models import Station, Measurement, Values
+from models import Measurement, Station, Values
 
 from enums import SensorModel
 
@@ -29,6 +27,25 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
+
+
+# Helper function to get or create a location
+def get_or_create_location(db: Session, lat: float, lon: float, height: float):
+    # Prüfen, ob bereits eine Location mit lat, lon und height existiert
+    location = db.query(Location).filter(
+        Location.lat == lat,
+        Location.lon == lon,
+        Location.height == height
+    ).first()
+
+    # Falls keine existiert, erstelle eine neue Location
+    if location is None:
+        location = Location(lat=lat, lon=lon, height=height)
+        db.add(location)
+        db.commit()
+        db.refresh(location)
+
+    return location
 
 # Old endpoints for compatability reason
 
@@ -69,9 +86,9 @@ async def get_history_station_data(
 
 @app.get("/v1/station/current", response_class=Response)
 async def get_current_station_data(
-    station_ids: str = None,  # Eine Liste von alphanumerischen Station IDs (z.B. "00112233AABB,00112233CCDD")
-    last_active: int = 3600,  # Zeitspanne in Sekunden, die Zeitraum angibt, in welchem Stationen aktiv gewesen sein müssen
-    output_format: str = "geojson",  # Standardmäßig GeoJSON
+    station_ids: str = None,
+    last_active: int = 3600,
+    output_format: str = "geojson",
     db: Session = Depends(get_db)
 ):
     """
@@ -83,39 +100,30 @@ async def get_current_station_data(
     time_threshold = datetime.now(tz=ZoneInfo("Europe/Vienna")) - timedelta(seconds=last_active)
 
     if station_ids:
-        # Station IDs als Liste von Strings (alphanumerisch, z.B. "00112233AABB")
         station_id_list = station_ids.split(",")
-        # Abfrage auf die Stationen basierend auf den alphanumerischen Gerätenamen (device)
         stations = db.query(Station).filter(Station.device.in_(station_id_list)).all()
-
     else:
-        # Abfrage auf alle Stationen, die in den letzten last_active Sekunden aktiv waren
         stations = db.query(Station).filter(Station.last_active >= time_threshold).all()
-        #stations = db.query(Station).all()
+
     if not stations:
         raise HTTPException(status_code=404, detail="No stations found")
 
-    # Initialisierung der Ausgabe basierend auf dem gewünschten Format
     if output_format == "geojson":
         features = []
-
         for station in stations:
-            # Finde alle Messungen, die den gleichen Zeitpunkt wie "last_active" haben
             measurements = db.query(Measurement).filter(
                 Measurement.station_id == station.id,
                 Measurement.time_measured == station.last_active
             ).all()
 
-            # Für jede Messung die zugehörigen Values abfragen
             sensors = []
-
             for measurement in measurements:
                 values = db.query(Values).filter(Values.measurement_id == measurement.id).all()
                 sensors.append({
-                            "sensor_model": measurement.sensor_model,
-                            "values": [{"dimension": value.dimension, "value": value.value} for value in values]
-                 })
-                
+                    "sensor_model": measurement.sensor_model,
+                    "values": [{"dimension": value.dimension, "value": value.value} for value in values]
+                })
+
             features.append({
                 "type": "Feature",
                 "geometry": {
@@ -123,7 +131,7 @@ async def get_current_station_data(
                     "coordinates": [station.lon, station.lat],
                 },
                 "properties": {
-                "device": station.device,
+                    "device": station.device,
                     "time": str(station.last_active),
                     "height": station.height,
                     "sensors": sensors
@@ -140,13 +148,11 @@ async def get_current_station_data(
     elif output_format == "csv":
         csv_data = "device,lat,lon,last_active,height,sensor_model,dimension,value\n"
         for station in stations:
-            # Finde alle Messungen, die den gleichen Zeitpunkt wie "last_active" haben
             measurements = db.query(Measurement).filter(
                 Measurement.station_id == station.id,
                 Measurement.time_measured == station.last_active
             ).all()
 
-            # Für jede Messung die zugehörigen Values abfragen
             for measurement in measurements:
                 values = db.query(Values).filter(Values.measurement_id == measurement.id).all()
 
@@ -158,7 +164,7 @@ async def get_current_station_data(
 
     else:
         return Response(content="Invalid output format", media_type="text/plain", status_code=400)
-    
+
     return Response(content=content, media_type=media_type)
 
 
@@ -171,46 +177,44 @@ async def create_station_data(
     # Empfangszeit des Requests erfassen
     time_received = datetime.now()
 
+    # Hole oder erstelle eine Location basierend auf lat, lon, height
+    location = get_or_create_location(db, station.location.lat, station.location.lon, float(station.location.height))
+
     # Prüfen, ob die Station bereits existiert
     db_station = db.query(Station).filter(Station.device == station.device).first()
 
     if db_station is None:
-        # Neue Station anlegen
+        # Neue Station anlegen und mit der Location verknüpfen
         db_station = Station(
             device=station.device,
             firmware=station.firmware,
             apikey=station.apikey,
-            lat=station.location.lat,
-            lon=station.location.lon,
-            height=float(station.location.height),
-            last_active=station.time
+            last_active=station.time,
+            location_id=location.id  # Verknüpfung zur Location
         )
         db.add(db_station)
         db.commit()
         db.refresh(db_station)
     else:
         if db_station.apikey != station.apikey:
-            # Fehler werfen, wenn der APIKEY nicht übereinstimmt
             raise HTTPException(
                 status_code=401,
                 detail="Invalid API key"
             )
 
-        # Station existiert bereits, prüfe und aktualisiere ggf. lon, lat, height und firmware
-        updated = False
-        if (db_station.lat != station.location.lat or 
-            db_station.lon != station.location.lon or
-            db_station.height != float(station.location.height) or
-            db_station.firmware != station.firmware):
+        # Prüfen, ob die Location-Daten abweichen
+        if (db_station.location.lat != station.location.lat or 
+            db_station.location.lon != station.location.lon or
+            db_station.location.height != float(station.location.height)):
             
-            # Aktualisierung der Station mit den neuen Werten
-            db_station.lat = station.location.lat
-            db_station.lon = station.location.lon
-            db_station.height = float(station.location.height)
-            db_station.firmware = station.firmware
-            updated = True
+            # Erstelle eine neue Location, wenn die aktuellen Standortdaten abweichen
+            new_location = get_or_create_location(db, station.location.lat, station.location.lon, float(station.location.height))
+            db_station.location_id = new_location.id  # Verknüpfe die Station mit der neuen Location
+            db.commit()
 
-        if updated:
+        # Prüfe und aktualisiere die Firmware, falls sie abweicht
+        if db_station.firmware != station.firmware:
+            db_station.firmware = station.firmware
             db.commit()
 
     # Durch alle Sensoren iterieren
@@ -223,7 +227,6 @@ async def create_station_data(
         ).first()
 
         if existing_measurement:
-            # Fehler werfen, wenn die Messung bereits existiert
             raise HTTPException(
                 status_code=422,
                 detail="Measurement already in Database"
@@ -233,8 +236,9 @@ async def create_station_data(
         db_measurement = Measurement(
             sensor_model=sensor_data.type,
             station_id=db_station.id,
-            time_measured=station.time,  # Die Zeit der Messung (aus den Daten)
-            time_received=time_received  # Empfangszeit des Requests
+            time_measured=station.time,
+            time_received=time_received,
+            location_id=db_station.location_id  # Verknüpfe die Messung mit der neuen Location
         )
         db.add(db_measurement)
         db.commit()
