@@ -16,7 +16,7 @@ ENV PIP_DISABLE_PIP_VERSION_CHECK=1
 WORKDIR /usr/src/app
 
 # Install dependencies
-COPY ./code/requirements.txt .
+COPY ./requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the FastAPI application code into the container

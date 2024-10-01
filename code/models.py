@@ -2,6 +2,26 @@ from sqlalchemy import Column, Integer, String, Float, ForeignKey, DateTime
 from sqlalchemy.orm import relationship
 from database import Base
 
+class Country(Base):
+    __tablename__ = "countries"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, unique=True, index=True)
+    code = Column(String, unique=True, index=True)  # Optional: Ländercode (z.B. 'AT' für Österreich)
+    # Relationships:
+    cities = relationship("City", back_populates="country")
+
+
+class City(Base):
+    __tablename__ = "cities"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, index=True)
+    # Relationships:
+    country_id = Column(Integer, ForeignKey('countries.id'))
+    country = relationship("Country", back_populates="cities")
+    locations = relationship("Location", back_populates="city")
+
 
 class Location(Base):
     __tablename__ = "locations"
@@ -11,6 +31,10 @@ class Location(Base):
     lon = Column(Float)
     height = Column(Float)
     # Relationships:
+    city_id = Column(Integer, ForeignKey('cities.id'))
+    city = relationship("City", back_populates="locations")
+    country_id = Column(Integer, ForeignKey('countries.id'))
+    country = relationship("Country")
     stations = relationship("Station", back_populates="location")
     measurements = relationship("Measurement", back_populates="location")
 
@@ -53,11 +77,3 @@ class Values(Base):
     # Relationships:
     measurement_id = Column(Integer, ForeignKey('measurements.id'))
     measurement = relationship("Measurement", back_populates="values")
-    
-
-# class City(Base):
-#     __tablename__ = "cities"
-
-#     id = Column(Integer, primary_key=True, index=True)
-#     name = Column(String, unique=True, index=True)
-    
