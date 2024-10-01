@@ -1,0 +1,1 @@
+from services.hourly_average import calculate_hourly_average  # Importiere die Service-Funktion

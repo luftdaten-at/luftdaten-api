@@ -77,3 +77,15 @@ class Values(Base):
     # Relationships:
     measurement_id = Column(Integer, ForeignKey('measurements.id'))
     measurement = relationship("Measurement", back_populates="values")
+
+
+class HourlyAverages(Base):
+    __tablename__ = "hourly_averages"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    station_id = Column(Integer, ForeignKey('stations.id'))
+    station = relationship("Station")
+    avg_value = Column(Float)
+    sensor_model = Column(Integer)  # Referenz auf den Sensortyp
+    dimension = Column(Integer)     # Referenz auf die Dimension des Messwertes
+    timestamp = Column(DateTime)    # Zeitstempel für die Stunde

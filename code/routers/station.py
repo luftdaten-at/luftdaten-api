@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Response, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, Response, HTTPException
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -7,6 +7,7 @@ from models import Station, Measurement, Values
 from schemas import StationDataCreate, SensorsCreate
 from utils import get_or_create_location, download_csv
 import json
+from tasks import calculate_hourly_average
 
 router = APIRouter()
 
@@ -120,7 +121,8 @@ async def get_current_station_data(
 @router.post("/data")
 async def create_station_data(
     station: StationDataCreate, 
-    sensors: SensorsCreate, 
+    sensors: SensorsCreate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)
 ):
     # Empfangszeit des Requests erfassen
@@ -204,5 +206,8 @@ async def create_station_data(
             db.add(db_value)
 
     db.commit()
+
+    # Starte die Berechnung der stündlichen Durchschnittswerte im Hintergrund
+    background_tasks.add_task(calculate_hourly_average, db_station.id, db)
 
     return {"status": "success"}
