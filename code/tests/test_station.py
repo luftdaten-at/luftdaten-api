@@ -1,23 +1,26 @@
-# tests/test_station.py
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.abspath(__file__)) + '/../')
+
 import pytest
 from fastapi.testclient import TestClient
-from app.main import app
-from app.database import get_db
-from app.models import Station
+from main import app
+from database import get_db, Base
+from models import Station, Location, Measurement, Values, City, Country  # Importiere alle Modelle
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from app.database import Base
+from sqlalchemy.pool import NullPool  # Wichtig für Tests mit PostgreSQL
 
-# Konfiguriere eine Testdatenbank (in-memory SQLite)
-SQLALCHEMY_DATABASE_URL = "sqlite:///:memory:"
+# Konfiguriere eine Testdatenbank (PostgreSQL)
+SQLALCHEMY_DATABASE_URL = "postgresql://test_user:test_password@db_test/test_database"
 
-engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False})
+engine = create_engine(SQLALCHEMY_DATABASE_URL, poolclass=NullPool)
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 # TestClient für FastAPI-App erstellen
 client = TestClient(app)
 
-# Eine Abhängigkeit überschreiben, um die Testdatenbank zu verwenden
+# Überschreibe die Abhängigkeit, um die Testdatenbank zu verwenden
 def override_get_db():
     try:
         db = TestingSessionLocal()
@@ -30,9 +33,10 @@ app.dependency_overrides[get_db] = override_get_db
 # Vor jedem Test die Datenbanktabellen neu erstellen
 @pytest.fixture(scope="function", autouse=True)
 def setup_database():
-    Base.metadata.create_all(bind=engine)
+    # Erstelle alle Tabellen für alle Modelle
+    Base.metadata.create_all(bind=engine)  # Erstelle die Tabellen
     yield
-    Base.metadata.drop_all(bind=engine)
+    Base.metadata.drop_all(bind=engine)  # Lösche die Tabellen nach jedem Test
 
 def test_get_station_no_data():
     response = client.get("/v1/station/current")
