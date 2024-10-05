@@ -33,6 +33,23 @@ Build and push to Dockerhub.
     docker build -f Dockerfile.prod -t luftdaten/api:tagname --platform linux/amd64 .
     docker push luftdaten/api:tagname
 
+<<<<<<< Updated upstream
+=======
+Currently automaticly done by Github Workflow.
+Tags:
+    - **staging**: latest version for testing
+    - **x.x.x**: released versions for production
+
+
+#### Pytest
+
+    docker compose exec app pytest -v
+    docker compose exec app pytest -o log_cli=true --log-level=DEBUG
+
+
+### Production
+
+>>>>>>> Stashed changes
 Create docker-compose.prod.yml from example-docker-compose.prod.yml by setting the secret key. Then run:
 
     docker compose -f docker-compose.prod.yml up -d
