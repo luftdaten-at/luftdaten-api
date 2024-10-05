@@ -1,9 +1,9 @@
 services:
   app:
-    image: luftdaten/api:0.1.0
+    image: luftdaten/api:0.2.0
     restart: unless-stopped
     container_name: luftdaten-api-app
-    command: uvicorn main:app --host 0.0.0.0 --port 80
+    command: /bin/sh -c "alembic upgrade head && uvicorn main:app --host 0.0.0.0 --port 80 --reload"
     expose:
       - 80
     labels:
