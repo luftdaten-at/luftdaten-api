@@ -5,7 +5,13 @@ FROM python:3.12-alpine
 ENV TZ=Europe/Vienna
 
 # Install required packages
-RUN apk update && apk add netcat-openbsd
+RUN apk update && apk add --no-cache \
+    build-base \
+    cmake \
+    netcat-openbsd \
+    ninja \
+    libffi-dev \
+    openssl-dev
 
 # set env variables
 ENV PYTHONDONTWRITEBYTECODE=1
