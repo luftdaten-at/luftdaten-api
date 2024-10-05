@@ -3,10 +3,11 @@ from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from database import get_db
-from models import Station, Measurement, Values
+import json
+
+from models import Station, Location, Measurement, Values
 from schemas import StationDataCreate, SensorsCreate
 from utils import get_or_create_location, download_csv
-import json
 from tasks import calculate_hourly_average
 
 router = APIRouter()
@@ -132,15 +133,24 @@ async def create_station_data(
     db_station = db.query(Station).filter(Station.device == station.device).first()
 
     if db_station is None:
-        # Wenn die Station noch nicht existiert, erstelle eine neue Location und Station
-        new_location = get_or_create_location(db, station.location.lat, station.location.lon, float(station.location.height))
+        # Neue Station und neue Location anlegen
+        new_location = Location(
+            lat=station.location.lat,
+            lon=station.location.lon,
+            height=float(station.location.height)
+        )
+        db.add(new_location)
+        db.commit()
+        db.refresh(new_location)
 
+        # Neue Station anlegen und das source-Feld überprüfen (Standardwert ist 1)
         db_station = Station(
             device=station.device,
             firmware=station.firmware,
             apikey=station.apikey,
             location_id=new_location.id,
-            last_active=station.time
+            last_active=station.time,
+            source=station.source if station.source is not None else 1
         )
         db.add(db_station)
         db.commit()
@@ -148,7 +158,10 @@ async def create_station_data(
     else:
         # Station existiert, API-Schlüssel überprüfen
         if db_station.apikey != station.apikey:
-            raise HTTPException(status_code=401, detail="Invalid API key")
+            raise HTTPException(
+                status_code=401,
+                detail="Invalid API key"
+            )
 
         updated = False
 

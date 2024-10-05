@@ -64,6 +64,7 @@ class Station(Base):
     firmware = Column(String)
     apikey = Column(String)
     last_active = Column(DateTime)
+    source = Column(Integer)
     # Relationships:
     location_id = Column(Integer, ForeignKey('locations.id'))
     location = relationship("Location", back_populates="stations")
@@ -103,6 +104,6 @@ class HourlyAverages(Base):
     station_id = Column(Integer, ForeignKey('stations.id'))
     station = relationship("Station")
     avg_value = Column(Float)
-    sensor_model = Column(Integer)  # Referenz auf den Sensortyp
-    dimension = Column(Integer)     # Referenz auf die Dimension des Messwertes
-    timestamp = Column(DateTime)    # Zeitstempel für die Stunde
+    sensor_model = Column(Integer)
+    dimension = Column(Integer)
+    timestamp = Column(DateTime)

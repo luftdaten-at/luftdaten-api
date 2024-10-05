@@ -79,6 +79,7 @@ class Dimension():
         """
         return cls._names.get(dimension_id, "Unknown")
 
+
 class SensorModel():
     SEN5X = 1
     BMP280 = 2
@@ -109,10 +110,32 @@ class SensorModel():
     @classmethod
     def get_sensor_name(cls, sensor_model):
         return cls._names.get(sensor_model, "Unknown Sensor")
-    
+
+
 class LdProduct():
     AIR_AROUND = 1
     AIR_CUBE = 2
     AIR_STATION = 3
     AIR_BADGE = 4
     AIR_BIKE = 5
+
+
+class Source():
+    LD = 1
+    LDTTN = 2
+    SC = 3
+
+    _names = {
+        LD: "Luftdaten.at",
+        LDTTN: "Luftdaten.at TTN LoRaWAN",
+        SC: "sensor.community"
+    }
+
+    @classmethod
+    def get_name(cls, source_id: int) -> str:
+        """
+        Gibt den Namen der angegebenen Source zurück.
+        :param source_id: Die ID der Source
+        :return: Der zugehörige Name oder 'Unknown', wenn kein Name vorhanden ist
+        """
+        return cls._names.get(source_id, "Unknown")
