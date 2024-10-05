@@ -20,6 +20,7 @@ class StationDataCreate(BaseModel):
     firmware: str
     apikey: str
     location: LocationCreate
+    source: Optional[int] = 1
 
 
 class SensorDataCreate(BaseModel):
