@@ -27,15 +27,17 @@ class City(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, index=True)
     slug = Column(String, unique=True, index=True)
+    tz = Column(String, nullable=True)
     # Relationships:
     country_id = Column(Integer, ForeignKey('countries.id'))
     country = relationship("Country", back_populates="cities")
     locations = relationship("Location", back_populates="city")
 
-    def __init__(self, name, country_id):
+    def __init__(self, name, country_id, tz):
         self.name = name
         self.slug = slugify(name)
         self.country_id = country_id
+        self.tz = tz
 
 
 class Location(Base):

@@ -1,7 +1,11 @@
 import requests
 from geopy.geocoders import Nominatim
+from timezonefinder import TimezoneFinder
 from sqlalchemy.orm import Session
 from models import City, Country, Location
+
+# Initialisiere TimezoneFinder
+tf = TimezoneFinder()
 
 
 # Funktion für CSV Loading
@@ -41,8 +45,11 @@ def get_or_create_location(db: Session, lat: float, lon: float, height: float):
     # Überprüfe, ob die Stadt bereits in der Datenbank existiert
     city = db.query(City).filter_by(name=city_name, country_id=country.id).first()
     if city is None:
+        # Zeitzone basierend auf den Koordinaten ermitteln
+        timezone_str = tf.timezone_at(lng=lon, lat=lat)
+        
         # Neue Stadt anlegen, wenn sie noch nicht existiert
-        city = City(name=city_name, country_id=country.id)
+        city = City(name=city_name, country_id=country.id, tz=timezone_str)
         db.add(city)
         db.commit()
         db.refresh(city)
