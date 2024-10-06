@@ -1,18 +1,50 @@
+import logging
+from celery import shared_task
 import requests
 from database import get_db
-from celery import shared_task
 from services.data_service import process_and_import_data
+
+# Logging-Konfiguration
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
 @shared_task
 def import_sensor_community_data():
     """
     Import from sensor.community
     """
+    logger.info("Task 'import_sensor_community_data' started.")
+    
     url = "https://data.sensor.community/static/v1/data.json"
-    response = requests.get(url)
+    try:
+        response = requests.get(url)
+        logger.debug(f"Request sent to {url}, Status Code: {response.status_code}")
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Failed to fetch data from {url}: {e}")
+        return
+
     if response.status_code == 200:
-        data = response.json()
-        # Öffne die Datenbank-Session
-        db = next(get_db())
-        process_and_import_data(db, data, source = 3)
-        db.close()
+        try:
+            data = response.json()
+            logger.info("Data successfully fetched and parsed from sensor.community.")
+        except ValueError as e:
+            logger.error(f"Error parsing JSON response: {e}")
+            return
+        
+        try:
+            db = next(get_db())  # Öffne die Datenbank-Session
+            logger.debug("Database session opened.")
+        except Exception as e:
+            logger.error(f"Failed to open database session: {e}")
+            return
+
+        try:
+            process_and_import_data(db, data, source=3)  # Verarbeite und speichere die Daten
+            logger.info("Data processed and imported successfully.")
+        except Exception as e:
+            logger.error(f"Error processing and importing data: {e}")
+        finally:
+            db.close()
+            logger.debug("Database session closed.")
+    else:
+        logger.error(f"Failed to fetch data: Status Code {response.status_code}")

@@ -14,46 +14,60 @@ services:
       - internal    
   db:
     image: postgres:16
+    ports:
+     - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     env_file:
       - .env
     networks:
       - internal
-  db_test:
-    image: postgres:16
+  # db_test:
+  #   image: postgres:16
+  #   environment:
+  #     POSTGRES_USER: test_user
+  #     POSTGRES_PASSWORD: test_password
+  #     POSTGRES_DB: test_database
+  #   networks:
+  #     - internal
+  rabbitmq:
+    image: rabbitmq:management
     environment:
-      POSTGRES_USER: test_user
-      POSTGRES_PASSWORD: test_password
-      POSTGRES_DB: test_database
-    networks:
-      - internal
-  redis:
-    image: redis:alpine
+      RABBITMQ_DEFAULT_USER: user
+      RABBITMQ_DEFAULT_PASS: password
+    ports:
+      - "5672:5672"  # Für den RabbitMQ Broker
+      - "15672:15672"  # Für das RabbitMQ Management UI
     networks:
       - internal
   celery_worker:
     build: .
-    command: celery -A tasks.celery_worker worker --loglevel=info
+    command: celery -A celery_worker worker --loglevel=debug
     volumes:
       - ./code:/usr/src/app
     depends_on:
-      - redis
+      - rabbitmq
       - db
+    environment:
+      - CELERY_BROKER_URL=amqp://user:password@rabbitmq:5672/
     env_file:
       - .env
     networks:
       - internal
   celery_beat:
     build: .
-    command: celery -A tasks.celery_worker beat --loglevel=info
+    command: celery -A celery_worker beat --loglevel=debug
     volumes:
       - ./code:/usr/src/app
     depends_on:
-      - redis
+      - rabbitmq
       - db
+    environment:
+      - CELERY_BROKER_URL=amqp://user:password@rabbitmq:5672/
     env_file:
       - .env
+    networks:
+      - internal
 
 networks:
   internal:
