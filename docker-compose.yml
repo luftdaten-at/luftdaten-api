@@ -5,7 +5,7 @@ services:
     ports:
       - "80:80"
     volumes:
-      - ./code:/usr/src/app  
+      - ./code:/usr/src/app
     depends_on:
       - db
     env_file:
@@ -28,7 +28,35 @@ services:
       POSTGRES_DB: test_database
     networks:
       - internal
+  redis:
+    image: redis:alpine
+    networks:
+      - internal
+  celery_worker:
+    build: .
+    command: celery -A tasks.celery_worker worker --loglevel=info
+    volumes:
+      - ./code:/usr/src/app
+    depends_on:
+      - redis
+      - db
+    env_file:
+      - .env
+    networks:
+      - internal
+  celery_beat:
+    build: .
+    command: celery -A tasks.celery_worker beat --loglevel=info
+    volumes:
+      - ./code:/usr/src/app
+    depends_on:
+      - redis
+      - db
+    env_file:
+      - .env
+
 networks:
   internal:
+
 volumes:
   postgres_data:
