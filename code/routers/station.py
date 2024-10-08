@@ -8,7 +8,7 @@ import json
 from models import Station, Location, Measurement, Values
 from schemas import StationDataCreate, SensorsCreate
 from utils import get_or_create_location, download_csv
-from tasks import calculate_hourly_average
+from services.hourly_average import calculate_hourly_average
 
 router = APIRouter()
 
@@ -52,9 +52,9 @@ async def get_current_station_data(
 
     if station_ids:
         station_id_list = station_ids.split(",")
-        stations = db.query(Station).filter(Station.device.in_(station_id_list)).all()
+        stations = db.query(Station).join(Location).filter(Station.device.in_(station_id_list)).all()
     else:
-        stations = db.query(Station).filter(Station.last_active >= time_threshold).all()
+        stations = db.query(Station).join(Location).filter(Station.last_active >= time_threshold).all()
 
     if not stations:
         raise HTTPException(status_code=404, detail="No stations found")
@@ -79,12 +79,12 @@ async def get_current_station_data(
                 "type": "Feature",
                 "geometry": {
                     "type": "Point",
-                    "coordinates": [station.lon, station.lat],
+                    "coordinates": [station.location.lon, station.location.lat],
                 },
                 "properties": {
                     "device": station.device,
                     "time": str(station.last_active),
-                    "height": station.height,
+                    "height": station.location.height,
                     "sensors": sensors
                 }
             })

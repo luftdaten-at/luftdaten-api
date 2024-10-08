@@ -92,6 +92,12 @@ class SensorModel():
     AGS02MA = 9
     SHT4X = 10
     SGP40 = 11
+    DHT22 = 12
+    SDS011 = 13
+    SHT35 = 14
+    SPS30 = 15
+    PMS5003 = 16
+    PMS7003 = 17
 
     _names = {
         SEN5X: "SEN5X",
@@ -104,7 +110,33 @@ class SensorModel():
         SHT31: "SHT31",
         AGS02MA: "AGS02MA",
         SHT4X: "SHT4X",
-        SGP40: "SGP40"
+        SGP40: "SGP40",
+        DHT22: "DHT22",
+        SDS011: "SDS011",
+        SHT35: "SHT35",
+        SPS30: "SPS30",
+        PMS5003: "PMS5003",
+        PMS7003: "PMS7003"
+    }
+
+    _manufacturer = {
+        SEN5X: "Sensirion",
+        BMP280: "Bosch Sensortec",
+        BME280: "Bosch Sensortec",
+        BME680: "Bosch Sensortec",
+        SCD4X: "Sensirion",
+        AHT20: "ASAIR",
+        SHT30: "Sensirion",
+        SHT31: "Sensirion",
+        AGS02MA: "ASAIR",
+        SHT4X: "Sensirion",
+        SGP40: "Sensirion",
+        DHT22: "ASAIR",
+        SDS011: "Nova Fitness",
+        SHT35: "Sensirion",
+        SPS30: "Sensirion",
+        PMS5003: "Plantower",
+        PMS7003: "Plantower"
     }
 
     @classmethod
