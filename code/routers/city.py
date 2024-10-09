@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from database import get_db
 from sqlalchemy import func, desc
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from models import City, Country, Station, Measurement, Values
 from enums import Dimension
@@ -81,7 +82,7 @@ async def get_average_measurements_by_city(
     # Bereite die Antwort im GeoJSON-Format vor
     response = {
         "city": city.name,
-        "time": datetime.now(city.tz).isoformat(),
+        "time": datetime.now(ZoneInfo(city.tz)).isoformat(),
         "values": [
             {
                 "dimension": dimension,
