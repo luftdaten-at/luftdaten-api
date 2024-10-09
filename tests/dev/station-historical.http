@@ -1,0 +1,4 @@
+# API test request for the endpoint /station/historical/
+# 
+
+GET http://localhost/v1/station/historical??station_ids=1,2,3&start=2024-10-01T08:00&end=2024-10-05T18:00&output_format=csv HTTP/1.1

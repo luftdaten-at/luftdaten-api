@@ -37,6 +37,7 @@ async def get_history_station_data(
     return Response(content=csv_data, media_type="text/csv")
 
 
+# New endpoints
 @router.get("/current", response_class=Response)
 async def get_current_station_data(
     station_ids: str = None,
@@ -224,3 +225,68 @@ async def create_station_data(
     background_tasks.add_task(calculate_hourly_average, db_station.id, db)
 
     return {"status": "success"}
+
+
+@router.get("/historical", response_class=Response)
+async def get_historical_station_data(
+    station_ids: str = None,  # Station IDs als durch Kommas getrennte Zeichenfolge
+    start: str = None,        # Startzeitpunkt (z.B. '2024-01-01T12:00')
+    end: str = None,          # Endzeitpunkt (z.B. '2024-01-31T18:00')
+    output_format: str = "csv",  # Ausgabeformat (entweder 'csv' oder 'json')
+    db: Session = Depends(get_db)
+):
+    # Validierung und Parsing der Parameter
+    if station_ids:
+        station_id_list: List[int] = [int(station_id) for station_id in station_ids.split(",")]
+    else:
+        raise HTTPException(status_code=400, detail="Station IDs are required.")
+
+    # Überprüfen, ob die Start- und Enddaten im richtigen Format vorliegen (YYYY-MM-DDThh:mm)
+    try:
+        start_date = datetime.strptime(start, '%Y-%m-%dT%H:%M') if start else None
+        end_date = datetime.strptime(end, '%Y-%m-%dT%H:%M') if end else None
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format. Use 'YYYY-MM-DDThh:mm'.")
+
+    # Abfrage der Daten
+    query = db.query(Measurement).join(Station).filter(Station.device.in_(station_id_list))
+
+    if start_date:
+        query = query.filter(Measurement.time_measured >= start_date)
+    if end_date:
+        query = query.filter(Measurement.time_measured <= end_date)
+
+    measurements = query.all()
+
+    if not measurements:
+        raise HTTPException(status_code=404, detail="No data found for the given criteria.")
+
+    # Datenverarbeitung basierend auf dem gewünschten Ausgabeformat
+    if output_format == "csv":
+        output = StringIO()
+        writer = csv.writer(output)
+        writer.writerow(["Station ID", "Sensor Model", "Time Measured", "Dimension", "Value"])  # CSV-Header
+
+        for measurement in measurements:
+            for value in measurement.values:
+                writer.writerow([measurement.station_id, measurement.sensor_model, measurement.time_measured, value.dimension, value.value])
+
+        response = Response(content=output.getvalue(), media_type="text/csv")
+        response.headers["Content-Disposition"] = "attachment; filename=historical_data.csv"
+        return response
+
+    elif output_format == "json":
+        result = [
+            {
+                "station_id": measurement.station_id,
+                "sensor_model": measurement.sensor_model,
+                "time_measured": measurement.time_measured.isoformat(),
+                "values": [
+                    {"dimension": value.dimension, "value": value.value} for value in measurement.values
+                ]
+            } for measurement in measurements
+        ]
+        return JSONResponse(content=result)
+
+    else:
+        raise HTTPException(status_code=400, detail="Invalid output format. Use 'csv' or 'json'.")
