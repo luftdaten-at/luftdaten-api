@@ -11,7 +11,7 @@ app = FastAPI(
         {
             "name": "city",
             "description": "Operations related to city-level data."
-        }
+        },
         {
             "name": "current",
             "description": "Operations related to getting current data (e.g., for stations, cities)."
