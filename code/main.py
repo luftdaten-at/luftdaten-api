@@ -2,7 +2,18 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from routers import city_router, station_router
 
-app = FastAPI()
+app = FastAPI(
+    openapi_tags=[
+        {
+            "name": "station",
+            "description": "Operations related to station data (e.g., historical, current)."
+        },
+        {
+            "name": "city",
+            "description": "Operations related to city-level data."
+        }
+    ]
+)
 
 origins = ["*"]
 

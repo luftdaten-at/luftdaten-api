@@ -12,7 +12,7 @@ from enums import Dimension
 router = APIRouter()
 
 
-@router.get("/all", tags= {"city"})
+@router.get("/all", tags=["city"])
 async def get_all_cities(db: Session = Depends(get_db)):
     # Abfrage aller Städte in der Datenbank
     cities = db.query(City, Country).join(Country, City.country_id == Country.id).all()
@@ -37,7 +37,7 @@ async def get_all_cities(db: Session = Depends(get_db)):
     return response
 
 
-@router.get("/current", tags= {"city", "current"})
+@router.get("/current", tags=["city", "current"])
 async def get_average_measurements_by_city(
     city_slug: str = Query(..., description="The name of the city to get the average measurements for."),
     db: Session = Depends(get_db)
