@@ -87,7 +87,7 @@ async def get_average_measurements_by_city(
             {
                 "dimension": dimension,
                 "name": Dimension.get_name(dimension),
-                "average": avg_value,
+                "average": f"{avg_value:.2f}",
                 "unit": Dimension.get_unit(dimension)
             }
             for dimension, avg_value in avg_measurements
