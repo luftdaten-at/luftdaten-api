@@ -37,7 +37,7 @@ async def get_all_cities(db: Session = Depends(get_db)):
     return response
 
 
-@router.get("/current", tags= {"city"})
+@router.get("/current", tags= {"city", "current"})
 async def get_average_measurements_by_city(
     city_slug: str = Query(..., description="The name of the city to get the average measurements for."),
     db: Session = Depends(get_db)
