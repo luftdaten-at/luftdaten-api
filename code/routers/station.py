@@ -38,7 +38,7 @@ async def get_history_station_data(
 
 
 # New endpoints
-@router.get("/current", response_class=Response)
+@router.get("/current", response_class=Response, tags= {"station", "current"})
 async def get_current_station_data(
     station_ids: str = None,
     last_active: int = 3600,
@@ -120,7 +120,7 @@ async def get_current_station_data(
     return Response(content=content, media_type=media_type)
 
 
-@router.post("/data")
+@router.post("/data", tags= {"station"})
 async def create_station_data(
     station: StationDataCreate, 
     sensors: SensorsCreate,
@@ -227,7 +227,7 @@ async def create_station_data(
     return {"status": "success"}
 
 
-@router.get("/historical", response_class=Response)
+@router.get("/historical", response_class=Response, tags= {"station"})
 async def get_historical_station_data(
     station_ids: str = Query(..., description="Comma-separated list of station devices"),
     start: str = Query(..., description="Supply in format: YYYY-MM-DDThh:mm. Time is optional."),
