@@ -62,7 +62,7 @@ scheduler = BackgroundScheduler()
 # Planen Sie die Aufgabe alle 5 Minuten
 scheduler.add_job(import_sensor_community_data, 'interval', minutes=5)
 
-if os.getenv('BACKGROUND_SERVICE') == True:
+if os.getenv('BACKGROUND_SERVICE') == 'True':
     # Scheduler starten
     scheduler.start()
 
