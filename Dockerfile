@@ -8,10 +8,7 @@ ENV TZ=Europe/Vienna
 RUN apk update && apk add --no-cache \
     build-base \
     cmake \
-    netcat-openbsd \
-    ninja \
-    libffi-dev \
-    openssl-dev
+    netcat-openbsd
 
 # set env variables
 ENV PYTHONDONTWRITEBYTECODE=1

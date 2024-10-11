@@ -48,6 +48,14 @@ async def get_average_measurements_by_city(
     if not city:
         raise HTTPException(status_code=404, detail="City not found")
 
+    # Überprüfe, ob city.tz gesetzt ist
+    if city.tz is None:
+        # Fallback auf eine Standard-Zeitzone, z.B. 'Europe/Vienna'
+        timezone = ZoneInfo('Europe/Vienna')
+    else:
+        # Nutze die Zeitzone der Stadt
+        timezone = ZoneInfo(city.tz)
+
     # Finde alle Stationen, die mit dieser Stadt verknüpft sind
     stations = db.query(Station).filter(Station.location.has(city_id=city.id)).all()
 
@@ -82,7 +90,7 @@ async def get_average_measurements_by_city(
     # Bereite die Antwort im GeoJSON-Format vor
     response = {
         "city": city.name,
-        "time": datetime.now(ZoneInfo(city.tz)).isoformat(),
+        "time": datetime.now(timezone).isoformat(),
         "values": [
             {
                 "dimension": dimension,

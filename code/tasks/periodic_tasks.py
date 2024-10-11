@@ -1,5 +1,4 @@
 import logging
-from celery import shared_task
 import requests
 from database import get_db
 from services.data_service import process_and_import_data
@@ -8,7 +7,6 @@ from services.data_service import process_and_import_data
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
-@shared_task
 def import_sensor_community_data():
     """
     Import from sensor.community
