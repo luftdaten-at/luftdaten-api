@@ -62,12 +62,11 @@ scheduler = BackgroundScheduler()
 # Planen Sie die Aufgabe alle 5 Minuten
 scheduler.add_job(import_sensor_community_data, 'interval', minutes=5)
 
-if os.getenv('BACKGROUND_SERVICE') == 'True':
-    # Scheduler starten
-    scheduler.start()
+# Scheduler starten
+scheduler.start()
 
-    # Stellen Sie sicher, dass der Scheduler sauber beendet wird
-    atexit.register(lambda: scheduler.shutdown())
+# Stellen Sie sicher, dass der Scheduler sauber beendet wird
+atexit.register(lambda: scheduler.shutdown())
 
 
 # Middleware to add /v1 prefix to all routes
