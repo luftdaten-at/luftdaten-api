@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from routers import city_router, station_router
 
@@ -34,6 +34,14 @@ app.add_middleware(
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
+
+# Middleware to add /v1 prefix to all routes
+@app.middleware("http")
+async def add_version_prefix(request: Request, call_next):
+    if request.url.path.startswith("/v1"):
+        request.scope["path"] = request.url.path[3:]  # Remove '/v1' from the path
+    response = await call_next(request)
+    return response
 
 # Register routers
 app.include_router(station_router, prefix="/station")
