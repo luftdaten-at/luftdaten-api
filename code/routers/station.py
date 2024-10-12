@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from database import get_db
 import json
+import io
 
 from models import Station, Location, Measurement, Values
 from schemas import StationDataCreate, SensorsCreate
@@ -275,7 +276,7 @@ async def get_historical_station_data(
         ]
         return Response(content=json.dumps(json_data), media_type="application/json")
 
-@router.get("/all")
+@router.get("/all", response_class=Response, tags=["station"])
 async def get_all_stations(
     output_format: str = Query(default="csv", enum=["json", "csv"]),
     db: Session = Depends(get_db)
