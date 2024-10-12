@@ -11,7 +11,6 @@ def process_and_import_data(db: Session, data, source):
 
         # Filtere nur die Einträge mit dem Land "AT" (Österreich)
         country = entry["location"].get("country")
-        logging.debug(f"Land des Eintrags: {country}")
         if country != "AT":
              logging.debug("Eintrag nicht aus Österreich, wird übersprungen.")
              continue
@@ -28,8 +27,6 @@ def process_and_import_data(db: Session, data, source):
             "apikey": None,
             "source": source
         }
-
-        logging.debug(f"Station Data: {station_data}")
 
         sensors = {}
         for sensordata_index, sensordata in enumerate(entry["sensordatavalues"]):

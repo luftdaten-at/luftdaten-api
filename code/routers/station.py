@@ -274,3 +274,58 @@ async def get_historical_station_data(
             for measurement in measurements
         ]
         return Response(content=json.dumps(json_data), media_type="application/json")
+
+@router.get("/all")
+async def get_all_stations(
+    output_format: str = Query(default="csv", enum=["json", "csv"]),
+    db: Session = Depends(get_db)
+):
+    """
+    Return all registered stations with their locations and number of measurements.
+    """
+    # Abfrage aller Stationen mit zugehörigen Location und Measurements
+    stations = db.query(Station).all()
+
+    # Struktur für die Antwort vorbereiten
+    result = []
+    for station in stations:
+        # Zähle die Anzahl der Measurements, die mit dieser Station verknüpft sind
+        measurements_count = db.query(Measurement).filter(Measurement.station_id == station.id).count()
+
+        # Erstelle das Ausgabeobjekt für jede Station
+        station_data = {
+            "id": station.device,
+            "last_active": station.last_active,
+            "location": {
+                "lat": station.location.lat if station.location else None,
+                "lon": station.location.lon if station.location else None
+            },
+            "measurements_count": measurements_count
+        }
+        result.append(station_data)
+
+    # Rückgabe als JSON
+    if output_format == "json":
+        return result
+    
+    # Rückgabe als CSV
+    else:
+        output = io.StringIO()
+        writer = csv.writer(output)
+
+        # Schreibe Header
+        writer.writerow(["id", "last_active", "location_lat", "location_lon", "measurements_count"])
+
+        # Schreibe Daten
+        for station in result:
+            writer.writerow([
+                station["id"],
+                station["last_active"],
+                station["location"]["lat"],
+                station["location"]["lon"],
+                station["measurements_count"]
+            ])
+
+        response = Response(content=output.getvalue(), media_type="text/csv")
+        response.headers["Content-Disposition"] = "attachment; filename=stations.csv"
+        return response

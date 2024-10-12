@@ -31,7 +31,7 @@ def import_sensor_community_data():
         
         try:
             db = next(get_db())  # Öffne die Datenbank-Session
-            logger.debug("Database session opened.")
+
         except Exception as e:
             logger.error(f"Failed to open database session: {e}")
             return
