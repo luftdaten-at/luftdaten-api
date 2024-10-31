@@ -8,7 +8,7 @@ import json
 import io
 
 from models import Station, Location, Measurement, Values
-from schemas import StationDataCreate, SensorsCreate
+from schemas import StationDataCreate, SensorsCreate, StationStatus
 from utils import get_or_create_location, download_csv
 from services.hourly_average import calculate_hourly_average
 
@@ -120,6 +120,13 @@ async def get_current_station_data(
         return Response(content="Invalid output format", media_type="text/plain", status_code=400)
 
     return Response(content=content, media_type=media_type)
+
+
+@router.post("/status", tags=["station"])
+async def create_station_status(status: StationStatus):
+    print(f"{status=}")
+
+    return {"status": "success"}
 
 
 @router.post("/data", tags=["station"])
