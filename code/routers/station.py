@@ -79,7 +79,6 @@ def validate_station_info(func):
             station
             *args,
             db_station = db_station,
-            db = db,
             **kwargs
         )
     return wrapper
@@ -194,29 +193,42 @@ async def get_current_station_data(
 
     return Response(content=content, media_type=media_type)
 
-'''
+
 @router.post("/status", tags=["station"])
 @validate_station_info
 async def create_station_status(
     station: StationDataCreate,
-    status: StationStatus,
-    db_station: Station
+    status_list: list[StationStatusCreate],
+
+    # von @validate_station_info 
+    db_station: Station = Depends(lambda: None),
+    db: Session = Depends(get_db)
 ):
- 
+
+    for status in status_list:
+        db_status = StationStatus(
+            station_id = db_station.id,
+            timestamp = status.time,
+            level = status.level,
+            message = status.message
+        )
+        db.add(db_status)
+        db.commit()
+        db.refresh(db_status)
+
     return {"status": "success"}
-'''
 
 
 @router.post("/data", tags=["station"])
-#@validate_station_info 
+@validate_station_info 
 async def create_station_data(
     station: StationDataCreate,
     sensors: SensorsCreate,
     background_tasks: BackgroundTasks,
-    
-    # Defaults are passed by @validate_station_info
-    db_station: Station = None,
-    db: Session = Depends(get_db),
+
+    # von @validate_station_info 
+    db_station: Station = Depends(lambda: None),
+    db: Session = Depends(get_db)
 ):
     # Empfangszeit des Requests erfassen
     time_received = datetime.now() 
@@ -264,8 +276,6 @@ async def create_station_data(
 
     return {"status": "success"}
 
-#import inspect
-#print(inspect.signature(create_station_data))
 
 @router.get("/historical", response_class=Response, tags=["station"])
 async def get_historical_station_data(
