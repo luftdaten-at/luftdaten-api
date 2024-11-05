@@ -30,3 +30,9 @@ class SensorDataCreate(BaseModel):
 
 class SensorsCreate(RootModel[Dict[int, SensorDataCreate]]):
     pass
+
+
+class StationStatusCreate(BaseModel):
+    time: datetime
+    level: int
+    message: str
