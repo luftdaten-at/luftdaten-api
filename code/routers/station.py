@@ -6,19 +6,21 @@ from database import get_db
 import csv
 import json
 import io
+from functools import wraps
 
-from models import Station, Location, Measurement, Values
-from schemas import StationDataCreate, SensorsCreate, StationStatus
+from models import Station, Location, Measurement, Values, StationStatus
+from schemas import StationDataCreate, SensorsCreate, StationStatusCreate
 from utils import get_or_create_location, download_csv
 from services.hourly_average import calculate_hourly_average
 
 
-def validate_station_info(f):
+def validate_station_info(func):
+    @wraps(func)
     async def wrapper(
         station: StationDataCreate, 
-        *a,
+        *args,
         db: Session = Depends(get_db),
-        **b
+        **kwargs
     ):
         # Prüfen, ob die Station bereits existiert
         db_station = db.query(Station).filter(Station.device == station.device).first()
@@ -73,12 +75,12 @@ def validate_station_info(f):
             if updated:
                 db.commit()
 
-        return await f(
-            *a,
-            station = station,
-            db_station = db_station
+        return await func(
+            station
+            *args,
+            db_station = db_station,
             db = db,
-            **b
+            **kwargs
         )
     return wrapper
 
@@ -192,7 +194,7 @@ async def get_current_station_data(
 
     return Response(content=content, media_type=media_type)
 
-
+'''
 @router.post("/status", tags=["station"])
 @validate_station_info
 async def create_station_status(
@@ -202,16 +204,18 @@ async def create_station_status(
 ):
  
     return {"status": "success"}
+'''
 
 
 @router.post("/data", tags=["station"])
-@validate_station_info
+#@validate_station_info 
 async def create_station_data(
+    station: StationDataCreate,
     sensors: SensorsCreate,
     background_tasks: BackgroundTasks,
-
-    station: StationDataCreate,
-    db_station: Station,
+    
+    # Defaults are passed by @validate_station_info
+    db_station: Station = None,
     db: Session = Depends(get_db),
 ):
     # Empfangszeit des Requests erfassen
@@ -260,6 +264,8 @@ async def create_station_data(
 
     return {"status": "success"}
 
+#import inspect
+#print(inspect.signature(create_station_data))
 
 @router.get("/historical", response_class=Response, tags=["station"])
 async def get_historical_station_data(

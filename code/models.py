@@ -110,6 +110,8 @@ class HourlyAverages(Base):
 
 
 class StationStatus(Base):
+    __tablename__ = "StationStatus"
+
     id = Column(Integer, primary_key=True, index=True)
     Column(Integer, ForeignKey('stations.id'))
     timestamp = Column(DateTime)
