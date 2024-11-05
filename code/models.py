@@ -107,3 +107,11 @@ class HourlyAverages(Base):
     sensor_model = Column(Integer)
     dimension = Column(Integer)
     timestamp = Column(DateTime)
+
+
+class StationStatus(Base):
+    id = Column(Integer, primary_key=True, index=True)
+    Column(Integer, ForeignKey('stations.id'))
+    timestamp = Column(DateTime)
+    level = Column(Integer)
+    message = Column(String)

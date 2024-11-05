@@ -32,7 +32,7 @@ class SensorsCreate(RootModel[Dict[int, SensorDataCreate]]):
     pass
 
 
-class StationStatus(BaseModel):
+class StationStatusCreate(BaseModel):
     time: datetime
-    level: str
+    level: int
     message: str
