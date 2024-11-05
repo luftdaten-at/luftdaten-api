@@ -16,9 +16,9 @@ from services.hourly_average import calculate_hourly_average
 def validate_station_info(f):
     async def wrapper(
         station: StationDataCreate, 
-        sensors: SensorsCreate,
-        background_tasks: BackgroundTasks,
-        db: Session = Depends(get_db)
+        *a,
+        db: Session = Depends(get_db),
+        **b
     ):
         # Prüfen, ob die Station bereits existiert
         db_station = db.query(Station).filter(Station.device == station.device).first()
@@ -74,11 +74,11 @@ def validate_station_info(f):
                 db.commit()
 
         return await f(
+            *a,
             station = station,
-            sensors = sensors,
-            background_tasks = background_tasks,
-            db_station = db_station,
-            db = db
+            db_station = db_station
+            db = db,
+            **b
         )
     return wrapper
 
@@ -207,9 +207,10 @@ async def create_station_status(
 @router.post("/data", tags=["station"])
 @validate_station_info
 async def create_station_data(
-    station: StationDataCreate, 
     sensors: SensorsCreate,
     background_tasks: BackgroundTasks,
+
+    station: StationDataCreate,
     db_station: Station,
     db: Session = Depends(get_db),
 ):
