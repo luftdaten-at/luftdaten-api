@@ -10,78 +10,8 @@ from functools import wraps
 
 from models import Station, Location, Measurement, Values, StationStatus
 from schemas import StationDataCreate, SensorsCreate, StationStatusCreate
-from utils import get_or_create_location, download_csv
+from utils import get_or_create_location, download_csv, get_or_create_station
 from services.hourly_average import calculate_hourly_average
-
-
-def validate_station_info(func):
-    @wraps(func)
-    async def wrapper(
-        station: StationDataCreate, 
-        *args,
-        db: Session = Depends(get_db),
-        **kwargs
-    ):
-        # Prüfen, ob die Station bereits existiert
-        db_station = db.query(Station).filter(Station.device == station.device).first()
-
-        if db_station is None:
-            # Neue Station und neue Location anlegen
-            new_location = Location(
-                lat=station.location.lat,
-                lon=station.location.lon,
-                height=float(station.location.height)
-            )
-            db.add(new_location)
-            db.commit()
-            db.refresh(new_location)
-
-            # Neue Station anlegen und das source-Feld überprüfen (Standardwert ist 1)
-            db_station = Station(
-                device=station.device,
-                firmware=station.firmware,
-                apikey=station.apikey,
-                location_id=new_location.id,
-                last_active=station.time,
-                source=station.source if station.source is not None else 1
-            )
-            db.add(db_station)
-            db.commit()
-            db.refresh(db_station)
-        else:
-            # Station existiert, API-Schlüssel überprüfen
-            if db_station.apikey != station.apikey:
-                raise HTTPException(
-                    status_code=401,
-                    detail="Invalid API key"
-                )
-
-            updated = False
-
-            # Überprüfen, ob Location aktualisiert werden muss
-            if db_station.location is None or (
-                db_station.location.lat != station.location.lat or 
-                db_station.location.lon != station.location.lon or
-                db_station.location.height != float(station.location.height)
-            ):
-                new_location = get_or_create_location(db, station.location.lat, station.location.lon, float(station.location.height))
-                db_station.location_id = new_location.id
-                updated = True
-
-            if db_station.firmware != station.firmware:
-                db_station.firmware = station.firmware
-                updated = True
-
-            if updated:
-                db.commit()
-
-        return await func(
-            station
-            *args,
-            db_station = db_station,
-            **kwargs
-        )
-    return wrapper
 
 
 router = APIRouter()
@@ -193,17 +123,17 @@ async def get_current_station_data(
 
     return Response(content=content, media_type=media_type)
 
-
 @router.post("/status", tags=["station"])
-@validate_station_info
 async def create_station_status(
     station: StationDataCreate,
     status_list: list[StationStatusCreate],
-
-    # von @validate_station_info 
-    db_station: Station = Depends(lambda: None),
     db: Session = Depends(get_db)
 ):
+
+    db_station = get_or_create_station(
+        db=db,
+        station=station
+    )
 
     for status in status_list:
         db_status = StationStatus(
@@ -220,16 +150,18 @@ async def create_station_status(
 
 
 @router.post("/data", tags=["station"])
-@validate_station_info 
 async def create_station_data(
     station: StationDataCreate,
     sensors: SensorsCreate,
     background_tasks: BackgroundTasks,
-
-    # von @validate_station_info 
-    db_station: Station = Depends(lambda: None),
     db: Session = Depends(get_db)
 ):
+
+    db_station = get_or_create_station(
+        db = db,
+        station = station
+    )
+
     # Empfangszeit des Requests erfassen
     time_received = datetime.now() 
 

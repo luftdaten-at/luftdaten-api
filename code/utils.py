@@ -2,8 +2,10 @@ import requests
 from geopy.geocoders import Nominatim
 from timezonefinder import TimezoneFinder
 from sqlalchemy.orm import Session
-from models import City, Country, Location
+from fastapi import HTTPException
+from models import City, Country, Location, Station
 import logging
+from schemas import StationDataCreate
 
 # Initialisiere TimezoneFinder
 tf = TimezoneFinder()
@@ -105,3 +107,59 @@ def get_or_create_location(db: Session, lat: float, lon: float, height: float):
             raise
 
     return location
+
+def get_or_create_station(db: Session, station: StationDataCreate):
+    # Prüfen, ob die Station bereits existiert
+    db_station = db.query(Station).filter(Station.device == station.device).first()
+
+    if db_station is None:
+        # Neue Station und neue Location anlegen
+        new_location = Location(
+            lat=station.location.lat,
+            lon=station.location.lon,
+            height=float(station.location.height)
+        )
+        db.add(new_location)
+        db.commit()
+        db.refresh(new_location)
+
+        # Neue Station anlegen und das source-Feld überprüfen (Standardwert ist 1)
+        db_station = Station(
+            device=station.device,
+            firmware=station.firmware,
+            apikey=station.apikey,
+            location_id=new_location.id,
+            last_active=station.time,
+            source=station.source if station.source is not None else 1
+        )
+        db.add(db_station)
+        db.commit()
+        db.refresh(db_station)
+    else:
+        # Station existiert, API-Schlüssel überprüfen
+        if db_station.apikey != station.apikey:
+            raise HTTPException(
+                status_code=401,
+                detail="Invalid API key"
+            )
+
+        updated = False
+
+        # Überprüfen, ob Location aktualisiert werden muss
+        if db_station.location is None or (
+            db_station.location.lat != station.location.lat or 
+            db_station.location.lon != station.location.lon or
+            db_station.location.height != float(station.location.height)
+        ):
+            new_location = get_or_create_location(db, station.location.lat, station.location.lon, float(station.location.height))
+            db_station.location_id = new_location.id
+            updated = True
+
+        if db_station.firmware != station.firmware:
+            db_station.firmware = station.firmware
+            updated = True
+
+        if updated:
+            db.commit()
+
+    return db_station
