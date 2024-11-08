@@ -29,6 +29,14 @@ target_metadata = Base.metadata
 # ... etc.
 
 
+# Funktion, um bestimmte Tabellen oder Views von den Migrationen auszuschließen
+def include_object(object, name, type_, reflected, compare_to):
+    # Beispiel: Die View 'hourly_dimension_averages' von den Migrationen ausschließen
+    if type_ == "table" and name == "hourly_avg":
+        return False
+    return True
+
+
 def run_migrations_offline() -> None:
     """Run migrations in 'offline' mode.
 
@@ -47,6 +55,7 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
+        include_object=include_object
     )
 
     with context.begin_transaction():
@@ -73,6 +82,7 @@ def run_migrations_online() -> None:
             connection=connection, target_metadata=target_metadata,
             compare_type=True,
             compare_server_default=True,
+            include_object=include_object
         )
 
         with context.begin_transaction():
