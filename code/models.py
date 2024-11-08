@@ -69,6 +69,8 @@ class Station(Base):
     location_id = Column(Integer, ForeignKey('locations.id'))
     location = relationship("Location", back_populates="stations")
     measurements = relationship("Measurement", back_populates="station")
+    hourly_avg = relationship("HourlyDimensionAverages", back_populates="station")
+    stationStatus = relationship("StationStatus", back_populates="station")
 
 
 class Measurement(Base):
@@ -110,10 +112,11 @@ class HourlyAverages(Base):
 
 
 class StationStatus(Base):
-    __tablename__ = "StationStatus"
+    __tablename__ = "stationStatus"
 
     id = Column(Integer, primary_key=True, index=True)
     station_id = Column(Integer, ForeignKey('stations.id'))
+    station = relationship("Station", back_populates="stationStatus")
     timestamp = Column(DateTime)
     level = Column(Integer)
     message = Column(String)
@@ -121,6 +124,7 @@ class StationStatus(Base):
 class HourlyDimensionAverages(Base):
     __tablename__ = 'hourly_avg'  # This should match your view name in PostgreSQL
 
-    station_id = Column(Integer, primary_key=True)  # Assuming 'station_id' uniquely identifies the record
+    station_id = Column(Integer, ForeignKey('stations.id'), primary_key=True)  # Assuming 'station_id' uniquely identifies the record
+    station = relationship("Station", back_populates="hourly_avg")
     hour = Column(DateTime, primary_key=True)       # Hour as a datetime truncated to hour precision
     dimension_avg = Column(JSON)                    # JSON column to store {dimension_id: avg_value} dictionary

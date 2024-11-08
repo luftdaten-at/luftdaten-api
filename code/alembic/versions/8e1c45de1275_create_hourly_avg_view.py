@@ -20,7 +20,7 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     op.execute("""create view hourly_avg as
-select station_id, hour, jsonb_object_agg(dimension, avg)
+select station_id, hour, jsonb_object_agg(dimension, avg) as dimension_avg
 from (select station_id, dimension, date_trunc('hour', time_measured) as hour, avg(value)
 from measurements as m join values as v on v.measurement_id = m.id
 join stations as s on s.id = m.station_id
