@@ -7,6 +7,7 @@ import csv
 import json
 import io
 from functools import wraps
+from enum import Enum
 
 from models import Station, Location, Measurement, Values, StationStatus
 from schemas import StationDataCreate, SensorsCreate, StationStatusCreate
@@ -207,6 +208,19 @@ async def create_station_data(
     background_tasks.add_task(calculate_hourly_average, db_station.id, db)
 
     return {"status": "success"}
+
+class Precision(str, Enum):
+    MAX = "all data points"
+    HOURLY = "hourly avg (one data point per hour)"
+
+@router.get("/test", response_class=Response, tags=["station"])
+async def test(
+    station_ids: list[str] = Query(..., description="List of station ids"),
+    start: datetime = Query(None, description="Start of time interval"),
+    end: datetime = Query(None, description="End of time interval"),
+    precision: Precision = Query(..., description="Precision of data points")
+):
+    pass
 
 
 @router.get("/historical", response_class=Response, tags=["station"])
