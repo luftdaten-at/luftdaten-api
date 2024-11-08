@@ -256,7 +256,11 @@ async def get_historical_station_data(
         )
 
         if output_format == "csv":
-            raise NotImplementedError
+            csv_data = "device,time_measured,dimension,value\n"
+            for measurement in query.all():
+                for dim, val in measurement.dimension_avg.items():
+                    csv_data += f"{measurement.station.device},{measurement.hour},{int(dim)},{val}\n"
+            return Response(content=csv_data, media_type="text/csv")
         else:
             if start_date:
                 query.filter(HourlyDimensionAverages.hour >= start_date)
