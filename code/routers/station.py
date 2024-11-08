@@ -229,6 +229,7 @@ async def get_historical_station_data(
     start: str = Query(..., description="Supply in format: YYYY-MM-DDThh:mm. Time is optional."),
     end: str = Query(..., description="Supply in format: YYYY-MM-DDThh:mm. Time is optional."),
     output_format: str = "csv",
+    precision: Precision = Query(Precision.MAX, description="Precision of data points"),
     db: Session = Depends(get_db)
 ):
     # Konvertiere die Liste von station_devices in eine Liste
@@ -240,6 +241,12 @@ async def get_historical_station_data(
         end_date = datetime.strptime(end, "%Y-%m-%dT%H:%M") if end else None
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DDThh:mm")
+
+    if precision == Precision.HOURLY:
+        if output_format == "csv":
+            raise NotImplementedError
+        else:
+            db.query()
 
     # Datenbankabfrage, um die Stationen nach station_device zu filtern
     query = db.query(Measurement).join(Station).filter(Station.device.in_(devices))

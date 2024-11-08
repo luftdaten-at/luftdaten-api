@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, ForeignKey, DateTime
+from sqlalchemy import Column, Integer, String, Float, ForeignKey, DateTime, JSON
 from sqlalchemy.orm import relationship
 from database import Base
 
@@ -117,3 +117,10 @@ class StationStatus(Base):
     timestamp = Column(DateTime)
     level = Column(Integer)
     message = Column(String)
+
+class HourlyDimensionAverages(Base):
+    __tablename__ = 'hourly_avg'  # This should match your view name in PostgreSQL
+
+    station_id = Column(Integer, primary_key=True)  # Assuming 'station_id' uniquely identifies the record
+    hour = Column(DateTime, primary_key=True)       # Hour as a datetime truncated to hour precision
+    dimension_avg = Column(JSON)                    # JSON column to store {dimension_id: avg_value} dictionary
