@@ -7,8 +7,9 @@ import csv
 import json
 import io
 from functools import wraps
+from enum import Enum
 
-from models import Station, Location, Measurement, Values, StationStatus
+from models import Station, Location, Measurement, Values, StationStatus, HourlyDimensionAverages
 from schemas import StationDataCreate, SensorsCreate, StationStatusCreate
 from utils import get_or_create_location, download_csv, get_or_create_station
 from services.hourly_average import calculate_hourly_average
@@ -208,13 +209,31 @@ async def create_station_data(
 
     return {"status": "success"}
 
+class Precision(str, Enum):
+    MAX = "all data points"
+    HOURLY = "hourly avg (one data point per hour)"
+
+class OutputFormat(str, Enum):
+    JSON = "json"
+    CSV = "csv"
+
+@router.get("/test", response_class=Response, tags=["station"])
+async def test(
+    station_ids: list[str] = Query(..., description="List of station ids"),
+    start: datetime = Query(None, description="Start of time interval"),
+    end: datetime = Query(None, description="End of time interval"),
+    precision: Precision = Query(..., description="Precision of data points")
+):
+    pass
+
 
 @router.get("/historical", response_class=Response, tags=["station"])
 async def get_historical_station_data(
     station_ids: str = Query(..., description="Comma-separated list of station devices"),
-    start: str = Query(..., description="Supply in format: YYYY-MM-DDThh:mm. Time is optional."),
-    end: str = Query(..., description="Supply in format: YYYY-MM-DDThh:mm. Time is optional."),
-    output_format: str = "csv",
+    start: str = Query(None, description="Supply in format: YYYY-MM-DDThh:mm. Time is optional."),
+    end: str = Query(None, description="Supply in format: YYYY-MM-DDThh:mm. Time is optional."),
+    output_format: OutputFormat = Query(OutputFormat.CSV, description="Ouput format"),
+    precision: Precision = Query(Precision.MAX, description="Precision of data points"),
     db: Session = Depends(get_db)
 ):
     # Konvertiere die Liste von station_devices in eine Liste
@@ -226,6 +245,47 @@ async def get_historical_station_data(
         end_date = datetime.strptime(end, "%Y-%m-%dT%H:%M") if end else None
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DDThh:mm")
+
+    if precision == Precision.HOURLY:
+        query = db.query(
+            HourlyDimensionAverages
+        ).join(
+            Station
+        ).filter(
+            Station.device.in_(devices)
+        )
+
+        if output_format == "csv":
+            csv_data = "device,time_measured,dimension,value\n"
+            for measurement in query.all():
+                for dim, val in measurement.dimension_avg.items():
+                    csv_data += f"{measurement.station.device},{measurement.hour},{int(dim)},{val}\n"
+            return Response(content=csv_data, media_type="text/csv")
+        else:
+            if start_date:
+                query.filter(HourlyDimensionAverages.hour >= start_date)
+            if end_date:
+                query.filter(HourlyDimensionAverages.hour <= end_date)
+
+            json_data = [
+                {
+                    "device": measurement.station.device,
+                    "time_measured": measurement.hour.strftime("%Y-%m-%dT%H:%M"),
+                    "values": [
+                        {
+                            "dimension": int(dim), 
+                            "value": val
+                        }
+                        for dim, val in measurement.dimension_avg.items()
+                    ]
+                }
+                for measurement in query.all()
+            ]
+
+            return Response(content=json.dumps(json_data), media_type="application/json")
+
+        return
+
 
     # Datenbankabfrage, um die Stationen nach station_device zu filtern
     query = db.query(Measurement).join(Station).filter(Station.device.in_(devices))
@@ -250,7 +310,7 @@ async def get_historical_station_data(
         json_data = [
             {
                 "device": measurement.station.device,
-                "time_measured": measurement.time_measured,
+                "time_measured": measurement.time_measured.strftime("%Y-%m-%dT%H:%M"),
                 "values": [{"dimension": value.dimension, "value": value.value} for value in measurement.values]
             }
             for measurement in measurements
