@@ -199,6 +199,8 @@ async def create_station_data(
                 measurement_id=db_measurement.id
             )
             db.add(db_value)
+        
+    db_station.last_active = station.time
 
     db.commit()
 
