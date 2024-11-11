@@ -1,5 +1,6 @@
 from fastapi import APIRouter, BackgroundTasks, Depends, Response, HTTPException, Query
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from database import get_db
@@ -8,6 +9,7 @@ import json
 import io
 from functools import wraps
 from enum import Enum
+from itertools import groupby
 
 from models import Station, Location, Measurement, Values, StationStatus, HourlyDimensionAverages
 from schemas import StationDataCreate, SensorsCreate, StationStatusCreate
@@ -210,6 +212,7 @@ async def create_station_data(
 class Precision(str, Enum):
     MAX = "all data points"
     HOURLY = "hourly avg (one data point per hour)"
+    DAYLY = "dayly avg (one data point per day)"
 
 
 class OutputFormat(str, Enum):
@@ -236,7 +239,56 @@ async def get_historical_station_data(
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DDThh:mm")
 
-    if precision == Precision.HOURLY:
+    if precision != Precision.MAX:
+        time_fram = None
+        if precision == Precision.HOURLY:
+            time_fram = 'hour'
+        if precision == Precision.DAYLY:
+            time_fram = 'day'
+
+        q = (
+            db.query(
+                Station.device,
+                func.date_trunc(time_fram, Measurement.time_measured).label('time'),
+                Values.dimension,
+                func.avg(Values.value).label('avg_value')
+            )
+            .join(Values)
+            .join(Station,)
+            .group_by(Measurement.station_id, Station.device, func.date_trunc(time_fram, Measurement.time_measured), Values.dimension)
+            .order_by(Measurement.station_id, Station.device, func.date_trunc(time_fram, Measurement.time_measured), Values.dimension)
+            .filter(Station.device.in_(devices))
+        )
+
+        if start_date:
+            q.filter(q.time >= start_date)
+        if end_date:
+            q.filter(q.time <= end_date)
+        
+        if output_format == 'csv':
+            csv_data = "device,time_measured,dimension,value\n"
+            for device, time, dim, val in q.all():
+                csv_data += f"{device},{time.strftime("%Y-%m-%dT%H:%M")},{dim},{val}\n"
+            return Response(content=csv_data, media_type="text/csv")
+        elif output_format == 'json':
+            groups = groupby(q.all(), lambda x: (x[0], x[1]))
+            json_data = [
+                {
+                    "device": device,
+                    "time_measured": time.strftime("%Y-%m-%dT%H:%M"),
+                    "values": [
+                        {
+                            "dimension": dim,
+                            "value": val
+                        } 
+                        for (_, _, dim, val) in data
+                    ]
+                }
+                for ((device, time), data) in groups
+            ]
+
+            return Response(content=json.dumps(json_data), media_type="application/json")
+        '''
         query = db.query(
             HourlyDimensionAverages
         ).join(
@@ -245,6 +297,11 @@ async def get_historical_station_data(
             Station.device.in_(devices)
         )
 
+        if start_date:
+            query.filter(HourlyDimensionAverages.hour >= start_date)
+        if end_date:
+           query.filter(HourlyDimensionAverages.hour <= end_date)
+
         if output_format == "csv":
             csv_data = "device,time_measured,dimension,value\n"
             for measurement in query.all():
@@ -252,11 +309,6 @@ async def get_historical_station_data(
                     csv_data += f"{measurement.station.device},{measurement.hour},{int(dim)},{val}\n"
             return Response(content=csv_data, media_type="text/csv")
         else:
-            if start_date:
-                query.filter(HourlyDimensionAverages.hour >= start_date)
-            if end_date:
-                query.filter(HourlyDimensionAverages.hour <= end_date)
-
             json_data = [
                 {
                     "device": measurement.station.device,
@@ -275,7 +327,7 @@ async def get_historical_station_data(
             return Response(content=json.dumps(json_data), media_type="application/json")
 
         return
-
+    '''
 
     # Datenbankabfrage, um die Stationen nach station_device zu filtern
     query = db.query(Measurement).join(Station).filter(Station.device.in_(devices))
