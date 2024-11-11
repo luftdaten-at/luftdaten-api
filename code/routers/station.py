@@ -1,6 +1,6 @@
 from fastapi import APIRouter, BackgroundTasks, Depends, Response, HTTPException, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from database import get_db
@@ -11,7 +11,7 @@ from functools import wraps
 from enum import Enum
 from itertools import groupby
 
-from models import Station, Location, Measurement, Values, StationStatus, HourlyDimensionAverages
+from models import Station, Location, Measurement, Values, StationStatus, HourlyDimensionAverages, City
 from schemas import StationDataCreate, SensorsCreate, StationStatusCreate
 from utils import get_or_create_location, download_csv, get_or_create_station
 
@@ -227,10 +227,12 @@ async def get_historical_station_data(
     end: str = Query(None, description="Supply in format: YYYY-MM-DDThh:mm. Time is optional."),
     output_format: OutputFormat = Query(OutputFormat.CSV, description="Ouput format"),
     precision: Precision = Query(Precision.MAX, description="Precision of data points"),
+    city_slugs: str = Query(None, description="Comma-seperated list of city_slugs"),
     db: Session = Depends(get_db)
 ):
     # Konvertiere die Liste von station_devices in eine Liste
     devices = station_ids.split(",") if station_ids else []
+    cities = city_slugs.split(",") if city_slugs else [] 
 
     # Konvertiere start und end in datetime-Objekte
     try:
@@ -246,7 +248,7 @@ async def get_historical_station_data(
         time_fram = 'hour'
     if precision == Precision.DAYLY:
         time_fram = 'day'
-
+    print(devices, cities)
     q = (
         db.query(
             Station.device,
@@ -255,12 +257,21 @@ async def get_historical_station_data(
             func.avg(Values.value).label('avg_value')
         )
         .join(Values)
-        .join(Station,)
-        .group_by(Measurement.station_id, Station.device, func.date_trunc(time_fram, Measurement.time_measured), Values.dimension)
-        .order_by(Measurement.station_id, Station.device, func.date_trunc(time_fram, Measurement.time_measured), Values.dimension)
-        .filter(Station.device.in_(devices))
+        .join(Station)
     )
 
+    if devices:
+        q.filter(Station.device.in_(devices))
+    if cities:
+        (
+            q.join(Location)
+            .join(City)
+            .filter(or_(not cities, City.slug.in_(cities)))
+        )
+    (
+        q.group_by(Measurement.station_id, Station.device, func.date_trunc(time_fram, Measurement.time_measured), Values.dimension)
+        .order_by(Measurement.station_id, Station.device, func.date_trunc(time_fram, Measurement.time_measured), Values.dimension)
+    )
     if start_date:
         q.filter(q.time >= start_date)
     if end_date:
