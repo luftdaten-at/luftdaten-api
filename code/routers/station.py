@@ -12,7 +12,6 @@ from enum import Enum
 from models import Station, Location, Measurement, Values, StationStatus, HourlyDimensionAverages
 from schemas import StationDataCreate, SensorsCreate, StationStatusCreate
 from utils import get_or_create_location, download_csv, get_or_create_station
-from services.hourly_average import calculate_hourly_average
 
 
 router = APIRouter()
@@ -154,7 +153,6 @@ async def create_station_status(
 async def create_station_data(
     station: StationDataCreate,
     sensors: SensorsCreate,
-    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)
 ):
 
@@ -204,27 +202,17 @@ async def create_station_data(
 
     db.commit()
 
-    # Starte die Berechnung der stündlichen Durchschnittswerte im Hintergrund
-    background_tasks.add_task(calculate_hourly_average, db_station.id, db)
-
     return {"status": "success"}
+
 
 class Precision(str, Enum):
     MAX = "all data points"
     HOURLY = "hourly avg (one data point per hour)"
 
+
 class OutputFormat(str, Enum):
     JSON = "json"
     CSV = "csv"
-
-@router.get("/test", response_class=Response, tags=["station"])
-async def test(
-    station_ids: list[str] = Query(..., description="List of station ids"),
-    start: datetime = Query(None, description="Start of time interval"),
-    end: datetime = Query(None, description="End of time interval"),
-    precision: Precision = Query(..., description="Precision of data points")
-):
-    pass
 
 
 @router.get("/historical", response_class=Response, tags=["station"])
