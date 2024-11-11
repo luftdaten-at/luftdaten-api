@@ -239,125 +239,57 @@ async def get_historical_station_data(
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DDThh:mm")
 
-    if precision != Precision.MAX:
-        time_fram = None
-        if precision == Precision.HOURLY:
-            time_fram = 'hour'
-        if precision == Precision.DAYLY:
-            time_fram = 'day'
+    time_fram = None
+    if precision == Precision.MAX:
+        time_fram = 'milliseconds'
+    if precision == Precision.HOURLY:
+        time_fram = 'hour'
+    if precision == Precision.DAYLY:
+        time_fram = 'day'
 
-        q = (
-            db.query(
-                Station.device,
-                func.date_trunc(time_fram, Measurement.time_measured).label('time'),
-                Values.dimension,
-                func.avg(Values.value).label('avg_value')
-            )
-            .join(Values)
-            .join(Station,)
-            .group_by(Measurement.station_id, Station.device, func.date_trunc(time_fram, Measurement.time_measured), Values.dimension)
-            .order_by(Measurement.station_id, Station.device, func.date_trunc(time_fram, Measurement.time_measured), Values.dimension)
-            .filter(Station.device.in_(devices))
+    q = (
+        db.query(
+            Station.device,
+            func.date_trunc(time_fram, Measurement.time_measured).label('time'),
+            Values.dimension,
+            func.avg(Values.value).label('avg_value')
         )
-
-        if start_date:
-            q.filter(q.time >= start_date)
-        if end_date:
-            q.filter(q.time <= end_date)
-        
-        if output_format == 'csv':
-            csv_data = "device,time_measured,dimension,value\n"
-            for device, time, dim, val in q.all():
-                csv_data += f"{device},{time.strftime("%Y-%m-%dT%H:%M")},{dim},{val}\n"
-            return Response(content=csv_data, media_type="text/csv")
-        elif output_format == 'json':
-            groups = groupby(q.all(), lambda x: (x[0], x[1]))
-            json_data = [
-                {
-                    "device": device,
-                    "time_measured": time.strftime("%Y-%m-%dT%H:%M"),
-                    "values": [
-                        {
-                            "dimension": dim,
-                            "value": val
-                        } 
-                        for (_, _, dim, val) in data
-                    ]
-                }
-                for ((device, time), data) in groups
-            ]
-
-            return Response(content=json.dumps(json_data), media_type="application/json")
-        '''
-        query = db.query(
-            HourlyDimensionAverages
-        ).join(
-            Station
-        ).filter(
-            Station.device.in_(devices)
-        )
-
-        if start_date:
-            query.filter(HourlyDimensionAverages.hour >= start_date)
-        if end_date:
-           query.filter(HourlyDimensionAverages.hour <= end_date)
-
-        if output_format == "csv":
-            csv_data = "device,time_measured,dimension,value\n"
-            for measurement in query.all():
-                for dim, val in measurement.dimension_avg.items():
-                    csv_data += f"{measurement.station.device},{measurement.hour},{int(dim)},{val}\n"
-            return Response(content=csv_data, media_type="text/csv")
-        else:
-            json_data = [
-                {
-                    "device": measurement.station.device,
-                    "time_measured": measurement.hour.strftime("%Y-%m-%dT%H:%M"),
-                    "values": [
-                        {
-                            "dimension": int(dim), 
-                            "value": val
-                        }
-                        for dim, val in measurement.dimension_avg.items()
-                    ]
-                }
-                for measurement in query.all()
-            ]
-
-            return Response(content=json.dumps(json_data), media_type="application/json")
-
-        return
-    '''
-
-    # Datenbankabfrage, um die Stationen nach station_device zu filtern
-    query = db.query(Measurement).join(Station).filter(Station.device.in_(devices))
+        .join(Values)
+        .join(Station,)
+        .group_by(Measurement.station_id, Station.device, func.date_trunc(time_fram, Measurement.time_measured), Values.dimension)
+        .order_by(Measurement.station_id, Station.device, func.date_trunc(time_fram, Measurement.time_measured), Values.dimension)
+        .filter(Station.device.in_(devices))
+    )
 
     if start_date:
-        query = query.filter(Measurement.time_measured >= start_date)
+        q.filter(q.time >= start_date)
     if end_date:
-        query = query.filter(Measurement.time_measured <= end_date)
-
-    measurements = query.all()
-
-    if not measurements:
-        return Response(status_code=404, content="No data found for the specified devices and time range.")
-
-    if output_format == "csv":
+        q.filter(q.time <= end_date)
+    
+    if output_format == 'csv':
         csv_data = "device,time_measured,dimension,value\n"
-        for measurement in measurements:
-            for value in measurement.values:
-                csv_data += f"{measurement.station.device},{measurement.time_measured},{value.dimension},{value.value}\n"
+        for device, time, dim, val in q.all():
+            csv_data += f"{device},{time.strftime("%Y-%m-%dT%H:%M")},{dim},{val}\n"
         return Response(content=csv_data, media_type="text/csv")
-    else:
+    elif output_format == 'json':
+        groups = groupby(q.all(), lambda x: (x[0], x[1]))
         json_data = [
             {
-                "device": measurement.station.device,
-                "time_measured": measurement.time_measured.strftime("%Y-%m-%dT%H:%M"),
-                "values": [{"dimension": value.dimension, "value": value.value} for value in measurement.values]
+                "device": device,
+                "time_measured": time.strftime("%Y-%m-%dT%H:%M"),
+                "values": [
+                    {
+                        "dimension": dim,
+                        "value": val
+                    } 
+                    for (_, _, dim, val) in data
+                ]
             }
-            for measurement in measurements
+            for ((device, time), data) in groups
         ]
+
         return Response(content=json.dumps(json_data), media_type="application/json")
+
 
 @router.get("/all", response_class=Response, tags=["station"])
 async def get_all_stations(
