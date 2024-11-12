@@ -1,5 +1,6 @@
 from fastapi import APIRouter, BackgroundTasks, Depends, Response, HTTPException, Query
 from sqlalchemy.orm import Session
+from sqlalchemy import func, or_
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from database import get_db
@@ -8,11 +9,11 @@ import json
 import io
 from functools import wraps
 from enum import Enum
+from itertools import groupby
 
-from models import Station, Location, Measurement, Values, StationStatus, HourlyDimensionAverages
+from models import Station, Location, Measurement, Values, StationStatus, HourlyDimensionAverages, City
 from schemas import StationDataCreate, SensorsCreate, StationStatusCreate
 from utils import get_or_create_location, download_csv, get_or_create_station
-from services.hourly_average import calculate_hourly_average
 
 
 router = APIRouter()
@@ -154,7 +155,6 @@ async def create_station_status(
 async def create_station_data(
     station: StationDataCreate,
     sensors: SensorsCreate,
-    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)
 ):
 
@@ -201,30 +201,23 @@ async def create_station_data(
                 measurement_id=db_measurement.id
             )
             db.add(db_value)
+        
+    db_station.last_active = station.time
 
     db.commit()
 
-    # Starte die Berechnung der stündlichen Durchschnittswerte im Hintergrund
-    background_tasks.add_task(calculate_hourly_average, db_station.id, db)
-
     return {"status": "success"}
+
 
 class Precision(str, Enum):
     MAX = "all data points"
     HOURLY = "hourly avg (one data point per hour)"
+    DAYLY = "dayly avg (one data point per day)"
+
 
 class OutputFormat(str, Enum):
     JSON = "json"
     CSV = "csv"
-
-@router.get("/test", response_class=Response, tags=["station"])
-async def test(
-    station_ids: list[str] = Query(..., description="List of station ids"),
-    start: datetime = Query(None, description="Start of time interval"),
-    end: datetime = Query(None, description="End of time interval"),
-    precision: Precision = Query(..., description="Precision of data points")
-):
-    pass
 
 
 @router.get("/historical", response_class=Response, tags=["station"])
@@ -234,88 +227,76 @@ async def get_historical_station_data(
     end: str = Query(None, description="Supply in format: YYYY-MM-DDThh:mm. Time is optional."),
     output_format: OutputFormat = Query(OutputFormat.CSV, description="Ouput format"),
     precision: Precision = Query(Precision.MAX, description="Precision of data points"),
+    city_slugs: str = Query(None, description="Comma-seperated list of city_slugs"),
     db: Session = Depends(get_db)
 ):
     # Konvertiere die Liste von station_devices in eine Liste
     devices = station_ids.split(",") if station_ids else []
+    cities = city_slugs.split(",") if city_slugs else [] 
 
     # Konvertiere start und end in datetime-Objekte
     try:
         start_date = datetime.strptime(start, "%Y-%m-%dT%H:%M") if start else None
-        end_date = datetime.strptime(end, "%Y-%m-%dT%H:%M") if end else None
+        end_date = datetime.strptime(end, "%Y-%m-%dT%H:%M") if end else None 
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DDThh:mm")
 
+    time_fram = None
+    if precision == Precision.MAX:
+        time_fram = 'milliseconds'
     if precision == Precision.HOURLY:
-        query = db.query(
-            HourlyDimensionAverages
-        ).join(
-            Station
-        ).filter(
-            Station.device.in_(devices)
+        time_fram = 'hour'
+    if precision == Precision.DAYLY:
+        time_fram = 'day'
+
+    truncated_time = func.date_trunc(time_fram, Measurement.time_measured).label('time')
+
+    q = (
+        db.query(
+            Station.device,
+            truncated_time,
+            Values.dimension,
+            func.avg(Values.value).label('avg_value')
         )
+        .join(Values)
+        .join(Station)
+        .filter(or_(not devices, Station.device.in_(devices)))
+        .join(Location)
+        .outerjoin(City)
+        .filter(or_(not cities, City.slug.in_(cities)))
+        .group_by(Measurement.station_id, Station.device, truncated_time, Values.dimension)
+        .order_by(Measurement.station_id, Station.device, truncated_time, Values.dimension)
+    )
 
-        if output_format == "csv":
-            csv_data = "device,time_measured,dimension,value\n"
-            for measurement in query.all():
-                for dim, val in measurement.dimension_avg.items():
-                    csv_data += f"{measurement.station.device},{measurement.hour},{int(dim)},{val}\n"
-            return Response(content=csv_data, media_type="text/csv")
-        else:
-            if start_date:
-                query.filter(HourlyDimensionAverages.hour >= start_date)
-            if end_date:
-                query.filter(HourlyDimensionAverages.hour <= end_date)
+    if start_date is not None:
+        q = q.filter(truncated_time >= start_date)
+    if end_date is not None:
+        q = q.filter(truncated_time <= end_date)
 
-            json_data = [
-                {
-                    "device": measurement.station.device,
-                    "time_measured": measurement.hour.strftime("%Y-%m-%dT%H:%M"),
-                    "values": [
-                        {
-                            "dimension": int(dim), 
-                            "value": val
-                        }
-                        for dim, val in measurement.dimension_avg.items()
-                    ]
-                }
-                for measurement in query.all()
-            ]
-
-            return Response(content=json.dumps(json_data), media_type="application/json")
-
-        return
-
-
-    # Datenbankabfrage, um die Stationen nach station_device zu filtern
-    query = db.query(Measurement).join(Station).filter(Station.device.in_(devices))
-
-    if start_date:
-        query = query.filter(Measurement.time_measured >= start_date)
-    if end_date:
-        query = query.filter(Measurement.time_measured <= end_date)
-
-    measurements = query.all()
-
-    if not measurements:
-        return Response(status_code=404, content="No data found for the specified devices and time range.")
-
-    if output_format == "csv":
+    if output_format == 'csv':
         csv_data = "device,time_measured,dimension,value\n"
-        for measurement in measurements:
-            for value in measurement.values:
-                csv_data += f"{measurement.station.device},{measurement.time_measured},{value.dimension},{value.value}\n"
+        for device, time, dim, val in q.all():
+            csv_data += f"{device},{time.strftime("%Y-%m-%dT%H:%M")},{dim},{val}\n"
         return Response(content=csv_data, media_type="text/csv")
-    else:
+    elif output_format == 'json':
+        groups = groupby(q.all(), lambda x: (x[0], x[1]))
         json_data = [
             {
-                "device": measurement.station.device,
-                "time_measured": measurement.time_measured.strftime("%Y-%m-%dT%H:%M"),
-                "values": [{"dimension": value.dimension, "value": value.value} for value in measurement.values]
+                "device": device,
+                "time_measured": time.strftime("%Y-%m-%dT%H:%M"),
+                "values": [
+                    {
+                        "dimension": dim,
+                        "value": val
+                    } 
+                    for (_, _, dim, val) in data
+                ]
             }
-            for measurement in measurements
+            for ((device, time), data) in groups
         ]
+
         return Response(content=json.dumps(json_data), media_type="application/json")
+
 
 @router.get("/all", response_class=Response, tags=["station"])
 async def get_all_stations(

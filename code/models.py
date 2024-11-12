@@ -99,18 +99,6 @@ class Values(Base):
     measurement = relationship("Measurement", back_populates="values")
 
 
-class HourlyAverages(Base):
-    __tablename__ = "hourly_averages"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    station_id = Column(Integer, ForeignKey('stations.id'))
-    station = relationship("Station")
-    avg_value = Column(Float)
-    sensor_model = Column(Integer)
-    dimension = Column(Integer)
-    timestamp = Column(DateTime)
-
-
 class StationStatus(Base):
     __tablename__ = "stationStatus"
 
