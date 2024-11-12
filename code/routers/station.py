@@ -237,7 +237,7 @@ async def get_historical_station_data(
     # Konvertiere start und end in datetime-Objekte
     try:
         start_date = datetime.strptime(start, "%Y-%m-%dT%H:%M") if start else None
-        end_date = datetime.strptime(end, "%Y-%m-%dT%H:%M") if end else None
+        end_date = datetime.strptime(end, "%Y-%m-%dT%H:%M") if end else None 
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DDThh:mm")
 
@@ -248,35 +248,31 @@ async def get_historical_station_data(
         time_fram = 'hour'
     if precision == Precision.DAYLY:
         time_fram = 'day'
-    print(devices, cities)
+
+    truncated_time = func.date_trunc(time_fram, Measurement.time_measured).label('time')
+
     q = (
         db.query(
             Station.device,
-            func.date_trunc(time_fram, Measurement.time_measured).label('time'),
+            truncated_time,
             Values.dimension,
             func.avg(Values.value).label('avg_value')
         )
         .join(Values)
         .join(Station)
+        .filter(or_(not devices, Station.device.in_(devices)))
+        .join(Location)
+        .outerjoin(City)
+        .filter(or_(not cities, City.slug.in_(cities)))
+        .group_by(Measurement.station_id, Station.device, truncated_time, Values.dimension)
+        .order_by(Measurement.station_id, Station.device, truncated_time, Values.dimension)
     )
 
-    if devices:
-        q.filter(Station.device.in_(devices))
-    if cities:
-        (
-            q.join(Location)
-            .join(City)
-            .filter(or_(not cities, City.slug.in_(cities)))
-        )
-    (
-        q.group_by(Measurement.station_id, Station.device, func.date_trunc(time_fram, Measurement.time_measured), Values.dimension)
-        .order_by(Measurement.station_id, Station.device, func.date_trunc(time_fram, Measurement.time_measured), Values.dimension)
-    )
-    if start_date:
-        q.filter(q.time >= start_date)
-    if end_date:
-        q.filter(q.time <= end_date)
-    
+    if start_date is not None:
+        q = q.filter(truncated_time >= start_date)
+    if end_date is not None:
+        q = q.filter(truncated_time <= end_date)
+
     if output_format == 'csv':
         csv_data = "device,time_measured,dimension,value\n"
         for device, time, dim, val in q.all():
