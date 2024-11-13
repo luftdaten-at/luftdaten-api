@@ -21,13 +21,60 @@ router = APIRouter()
 
 # Old endpoints for compatability reason
 @router.get("/current/all", response_class=Response)
-async def get_current_station_data_all():
+async def get_current_station_data_all(db: Session = Depends(get_db)):
     """
     Returns the active stations with lat, lon, PM1, PM10 and PM2.5.
     """
-    csv_url = "https://dev.luftdaten.at/d/station/history/all"
-    csv_data = download_csv(csv_url)
-    return Response(content=csv_data, media_type="text/csv")
+    #csv_url = "https://dev.luftdaten.at/d/station/history/all"
+    #csv_data = download_csv(csv_url)
+    #return Response(content=csv_data, media_type="text/csv")
+
+    """
+    DateTime timestamp;
+    int sid;
+    double latitude;
+    double longitude;
+    double? pm1;
+    double? pm25;
+    double? pm10;
+
+    select
+    time_measured,
+    device,
+    lat,
+    lon,
+    avg(case when dimension = 2 then value end) as "PM1",
+    avg(case when dimension = 3 then value end) as "PM2_5",
+    avg(case when dimension = 5 then value end) as "PM10"
+    from stations as s
+    inner join measurements as m on m.station_id = s.id
+    inner join locations as l on l.id = m.location_id
+    inner join values as v on v.measurement_id = m.id
+    where s.last_active = m.time_measured
+    group by s.id, device, m.id, m.time_measured, lat, lon
+    having avg(case when dimension = 2 then value end) is not null
+    and avg(case when dimension = 3 then value end) is not null
+    and avg(case when dimension = 5 then value end) is not null;
+    """
+
+    q = (
+        db.query(
+            Measurement.time_measured,
+            Station.id,
+            Location.lat,
+            Location.lon,
+        )
+        .join(Measurement)
+        .join(Values)
+        .join(Location)
+        .filter(Station.last_active == Measurement.time_measured)
+        .filter()
+    )
+
+    csv = "timestamp,sid,latitude,longitude,pm1,pm25,pm10\n"
+    #for item in q.all():
+
+
 
 @router.get("/history", response_class=Response)
 async def get_history_station_data(
