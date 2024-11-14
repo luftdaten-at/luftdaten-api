@@ -1,0 +1,28 @@
+services:
+  app:
+    build: .
+    volumes:
+      - ./code:/usr/src/app
+    depends_on:
+      - db
+    env_file:
+      - .env
+    networks:
+      - internal    
+    command: python main.py
+  db:
+    image: postgres:16
+    ports:
+     - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    env_file:
+      - .env
+    networks:
+      - internal
+  
+networks:
+  internal:
+
+volumes:
+  postgres_data:
