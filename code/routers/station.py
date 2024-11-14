@@ -1,6 +1,6 @@
 from fastapi import APIRouter, BackgroundTasks, Depends, Response, HTTPException, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import func, or_
+from sqlalchemy import func, or_, text
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from database import get_db
@@ -29,51 +29,31 @@ async def get_current_station_data_all(db: Session = Depends(get_db)):
     #csv_data = download_csv(csv_url)
     #return Response(content=csv_data, media_type="text/csv")
 
-    """
-    DateTime timestamp;
-    int sid;
-    double latitude;
-    double longitude;
-    double? pm1;
-    double? pm25;
-    double? pm10;
-
-    select
-    time_measured,
-    device,
-    lat,
-    lon,
-    avg(case when dimension = 2 then value end) as "PM1",
-    avg(case when dimension = 3 then value end) as "PM2_5",
-    avg(case when dimension = 5 then value end) as "PM10"
-    from stations as s
-    inner join measurements as m on m.station_id = s.id
-    inner join locations as l on l.id = m.location_id
-    inner join values as v on v.measurement_id = m.id
-    where s.last_active = m.time_measured
-    group by s.id, device, m.id, m.time_measured, lat, lon
-    having avg(case when dimension = 2 then value end) is not null
-    and avg(case when dimension = 3 then value end) is not null
-    and avg(case when dimension = 5 then value end) is not null;
-    """
-
-    q = (
-        db.query(
-            Measurement.time_measured,
-            Station.id,
-            Location.lat,
-            Location.lon,
-        )
-        .join(Measurement)
-        .join(Values)
-        .join(Location)
-        .filter(Station.last_active == Measurement.time_measured)
-        .filter()
-    )
+    sql_query = text("""select
+time_measured,
+device,
+lat,
+lon,
+avg(case when dimension = 2 then value end) as "PM1",
+avg(case when dimension = 3 then value end) as "PM2_5",
+avg(case when dimension = 5 then value end) as "PM10"
+from stations as s
+inner join measurements as m on m.station_id = s.id
+inner join locations as l on l.id = m.location_id
+inner join values as v on v.measurement_id = m.id
+where s.last_active = m.time_measured
+group by s.id, device, m.id, m.time_measured, lat, lon
+having avg(case when dimension = 2 then value end) is not null
+and avg(case when dimension = 3 then value end) is not null
+and avg(case when dimension = 5 then value end) is not null;""")
 
     csv = "timestamp,sid,latitude,longitude,pm1,pm25,pm10\n"
-    #for item in q.all():
+    csv += "\n".join(
+        ",".join([time.strftime("%Y-%m-%dT%H:%M")] + [str(o) for o in other])
+        for time, *other in db.execute(sql_query).fetchall()
+    )
 
+    return Response(content=csv, media_type="text/csv")
 
 
 @router.get("/history", response_class=Response)
