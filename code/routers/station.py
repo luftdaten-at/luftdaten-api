@@ -1,6 +1,6 @@
 from fastapi import APIRouter, BackgroundTasks, Depends, Response, HTTPException, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import func, or_
+from sqlalchemy import func, or_, text, case
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from database import get_db
@@ -21,27 +21,102 @@ router = APIRouter()
 
 # Old endpoints for compatability reason
 @router.get("/current/all", response_class=Response)
-async def get_current_station_data_all():
+async def get_current_station_data_all(db: Session = Depends(get_db)):
     """
     Returns the active stations with lat, lon, PM1, PM10 and PM2.5.
     """
-    csv_url = "https://dev.luftdaten.at/d/station/history/all"
-    csv_data = download_csv(csv_url)
-    return Response(content=csv_data, media_type="text/csv")
+
+    q = (
+        db.query(
+            Measurement.time_measured,
+            Station.device,
+            Location.lat,
+            Location.lon,
+            func.avg(case((Values.dimension == 2, Values.value))).label("PM1"),
+            func.avg(case((Values.dimension == 3, Values.value))).label("PM2_5"),
+            func.avg(case((Values.dimension == 5, Values.value))).label("PM10"),
+        )
+        .join(Measurement, Measurement.station_id == Station.id)
+        .join(Location, Location.id == Measurement.location_id)
+        .join(Values, Values.measurement_id == Measurement.id)
+        .filter(Station.last_active == Measurement.time_measured)
+        .group_by(
+            Station.id,
+            Station.device,
+            Measurement.id,
+            Measurement.time_measured,
+            Location.lat,
+            Location.lon
+        )
+        .having(func.avg(case((Values.dimension == 2, Values.value))).isnot(None))
+        .having(func.avg(case((Values.dimension == 3, Values.value))).isnot(None))
+        .having(func.avg(case((Values.dimension == 5, Values.value))).isnot(None))
+        .order_by(Measurement.time_measured)
+    )
+
+    csv = "timestamp,sid,latitude,longitude,pm1,pm25,pm10\n"
+    csv += "\n".join(
+        ",".join([time.strftime("%Y-%m-%dT%H:%M")] + [str(o) for o in other])
+        for time, *other in q.all()
+    )
+
+    return Response(content=csv, media_type="text/csv")
+
 
 @router.get("/history", response_class=Response)
 async def get_history_station_data(
     station_ids: str = None,
     smooth: str = "100",
-    start: str = None
+    start: str = None,
+    db: Session = Depends(get_db)
 ):
     """
     Returns the values from a single station in a given time.
     """
-    csv_url = f"https://dev.luftdaten.at/d/station/history?sid={station_ids}&smooth={smooth}&from={start}"
-    csv_data = download_csv(csv_url)
-    return Response(content=csv_data, media_type="text/csv")
 
+    start_time = datetime.strptime(start, "%Y-%m-%dT%H:%M") if start else None
+    station_ids = station_ids.split(',') if station_ids else None
+
+    q = (
+        db.query(
+            Measurement.time_measured,
+            Station.device,
+            Location.lat,
+            Location.lon,
+            func.avg(case((Values.dimension == 2, Values.value))).label("PM1"),
+            func.avg(case((Values.dimension == 3, Values.value))).label("PM2_5"),
+            func.avg(case((Values.dimension == 5, Values.value))).label("PM10"),
+        )
+        .join(Measurement, Measurement.station_id == Station.id)
+        .join(Location, Location.id == Measurement.location_id)
+        .join(Values, Values.measurement_id == Measurement.id)
+        .group_by(
+            Station.id,
+            Station.device,
+            Measurement.id,
+            Measurement.time_measured,
+            Location.lat,
+            Location.lon
+        )
+        .having(func.avg(case((Values.dimension == 2, Values.value))).isnot(None))
+        .having(func.avg(case((Values.dimension == 3, Values.value))).isnot(None))
+        .having(func.avg(case((Values.dimension == 5, Values.value))).isnot(None))
+        .order_by(Measurement.time_measured)
+    )
+
+    if station_ids:
+        q = q.filter(Station.device.in_(station_ids))
+
+    if start_time:
+        q = q.filter(Measurement.time_measured >= start_time)
+
+    csv = "timestamp,sid,latitude,longitude,pm1,pm25,pm10\n"
+    csv += "\n".join(
+        ",".join([time.strftime("%Y-%m-%dT%H:%M")] + [str(o) for o in other])
+        for time, *other in q.all()
+    )
+
+    return Response(content=csv, media_type="text/csv")
 
 # New endpoints
 @router.get("/current", response_class=Response, tags=["station", "current"])
