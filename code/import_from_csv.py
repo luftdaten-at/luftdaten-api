@@ -1,14 +1,7 @@
-import requests
-import re
-import zipfile
 import io
 import pandas as pd
-from urllib.parse import urljoin
-from bs4 import BeautifulSoup
 from database import get_db
 from models import *
-from enums import SensorModel, Dimension
-
 
 def import_sensor_community_archive_from_csv(csv: str):
     """
@@ -25,15 +18,22 @@ def import_sensor_community_archive_from_csv(csv: str):
         .all()
     }
 
+    print(station_id_map.keys())
+
     for row in df.iterrows():
         # check if sensor_id in database
         idx, data = row
         station_id = data['sensor_id']
         time_measured = data['timestamp']
         sensor_model = data['sensor_type']
+
+        #print(station_id in station_id_map)
+
         if station_id not in station_id_map or sensor_model not in SensorModel._names.values():
             continue
+
         sensor_model = {v: k for k, v in SensorModel._names.items()}[sensor_model]
+
         m = (
             db.query(Measurement)
             .filter(
@@ -74,28 +74,3 @@ def import_sensor_community_archive_from_csv(csv: str):
             db.add(db_value)
 
         db.commit()
-
-
-url = "https://archive.sensor.community/csv_per_month/"
-
-page = requests.get(url).text
-
-soup = BeautifulSoup(page, "html.parser")
-pattern = r"\d\d\d\d-\d\d"
-
-def walk(url):
-    print(f'Walk: {url}')
-    sub_soup = BeautifulSoup(requests.get(url).text, "html.parser")
-    for item in sub_soup.find_all("a"):
-        if item.get("href").endswith(".zip"):
-            response = requests.get(urljoin(url, item.get("href")))
-            with zipfile.ZipFile(io.BytesIO(response.content)) as zip_file:
-                for file_name in zip_file.namelist():
-                    with zip_file.open(file_name) as file:
-                        file_content = file.read().decode('utf-8')  # Decode if it's a text file
-                        print(f"Import file: {file_name}")
-                        import_sensor_community_archive_from_csv(file_content)
-
-for item in reversed(soup.find_all("a")):
-    if re.match(pattern, item.get("href")):
-        walk(urljoin(url, item.get("href"))) 
