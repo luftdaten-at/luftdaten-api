@@ -1,6 +1,0 @@
-bs4
-requests
-pandas
-psycopg2-binary==2.9.9
-python-slugify==8.0.4
-SQLAlchemy
