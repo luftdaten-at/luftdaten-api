@@ -3,7 +3,7 @@ services:
     image: luftdaten/api:0.2.0
     restart: unless-stopped
     container_name: luftdaten-api-app
-    command: /bin/sh -c "alembic upgrade head && uvicorn main:app --host 0.0.0.0 --port 80 --reload"
+    command: /bin/sh -c "alembic upgrade head && uvicorn main:app --host 0.0.0.0 --port 80 --reload & python3 download_csv.py"
     expose:
       - 80
     labels:
