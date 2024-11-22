@@ -66,6 +66,7 @@ def list_website(url, trys = 5):
             else:
                 continue
             all_csv_urls.append(urljoin(url, link))
+            print(urljoin(url, link), file=open('download_list.txt', 'a'))
 
 
 download_folder = "sensor_community_archive"
