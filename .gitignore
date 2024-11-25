@@ -155,4 +155,8 @@ cython_debug/
 
 # docker compose production environment
 docker-compose.prod.yml
-code/download_list.txt
+# import script
+code/sensor_community_archive/csv
+code/sensor_community_archive/log.txt
+code/sensor_community_archive/progress.txt
+code/sensor_community_archive/download_list.txt
