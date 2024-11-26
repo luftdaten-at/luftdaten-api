@@ -63,6 +63,8 @@ def import_sensor_community_archive_from_csv(csv_file_path: str):
                 continue
             if not dim:
                 continue
+            if val == float('nan'):
+                continue
 
             db_value = Values(
                 dimension=dim,
