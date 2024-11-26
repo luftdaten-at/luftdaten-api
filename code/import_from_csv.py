@@ -2,6 +2,7 @@ import io
 import pandas as pd
 from database import get_db
 from models import *
+from enums import SensorModel, Dimension
 
 def import_sensor_community_archive_from_csv(csv: str):
     """
@@ -18,16 +19,12 @@ def import_sensor_community_archive_from_csv(csv: str):
         .all()
     }
 
-    print(station_id_map.keys())
-
     for row in df.iterrows():
         # check if sensor_id in database
         idx, data = row
         station_id = data['sensor_id']
         time_measured = data['timestamp']
         sensor_model = data['sensor_type']
-
-        #print(station_id in station_id_map)
 
         if station_id not in station_id_map or sensor_model not in SensorModel._names.values():
             continue
