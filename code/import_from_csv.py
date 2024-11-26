@@ -1,6 +1,7 @@
 import io
 import pandas as pd
 import os
+from datetime import datetime
 from database import get_db
 from models import *
 from enums import SensorModel, Dimension
@@ -9,52 +10,45 @@ from enums import SensorModel, Dimension
 DOWNLOAD_FOLDER = "sensor_community_archive/csv"
 
 
-def import_sensor_community_archive_from_csv(csv: str):
+def import_sensor_community_archive_from_csv(csv_file_path: str):
     """
     sensor_id;sensor_type;location;lat;lon;timestamp;pressure;altitude;pressure_sealevel;temperature
     """
     db = next(get_db())
-    df = pd.read_csv(io.BytesIO(csv.encode()), encoding='utf8', sep=";")
-
-    station_id_map = {
-        t.device: t
-        for t in
-        db.query(Station)
-        .filter(Station.source == 3)
-        .all()
-    }
+    df = pd.read_csv(csv_file_path, encoding='utf8', sep=";")
 
     for row in df.iterrows():
         # check if sensor_id in database
         idx, data = row
-        station_id = data['sensor_id']
-        time_measured = data['timestamp']
-        sensor_model = data['sensor_type']
+        device = data['sensor_id']
+        time_measured = datetime.fromisoformat(data['timestamp'])
+        sensor_model = {v: k for k, v in SensorModel._names.items()}.get(data['sensor_type'], None)``
 
-        if station_id not in station_id_map or sensor_model not in SensorModel._names.values():
+        db_station = db.query(Station).filter(Station.device == device).first()
+
+        if not db_station or not sensor_model:
             continue
-
-        sensor_model = {v: k for k, v in SensorModel._names.items()}[sensor_model]
 
         m = (
             db.query(Measurement)
             .filter(
-                Measurement.station_id == station_id,
+                Measurement.station_id == db_station.id,
                 Measurement.time_measured == time_measured,
                 Measurement.sensor_model == sensor_model
             )
             .first()
         )
 
+        # if measurement is already present skip
         if m:
             continue
 
         db_measurement = Measurement(
             sensor_model=sensor_model,
-            station_id=station_id,
+            station_id=db_station.id,
             time_measured=time_measured,
             time_received=None,
-            location_id=station_id_map[station_id].location_id
+            location_id=db_station.location_id
         )
 
         print(f'Import measurment: {db_measurement}')
@@ -86,11 +80,7 @@ def main():
         # Ensure it's a file (not a directory)
         if os.path.isfile(file_path):
             # Read the file content as a string
-            with open(file_path, 'r', encoding='utf-8') as f:
-                csv_content = f.read()
-            
-            # Call the import function
-            import_sensor_community_archive_from_csv(csv_content)
+            import_sensor_community_archive_from_csv(file_path)
 
 
 if __name__ == "__main__":
