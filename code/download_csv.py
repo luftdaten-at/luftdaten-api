@@ -120,10 +120,7 @@ def main():
     for url in tqdm(get_urls(), desc="Downloading files", unit="files", file=open(PROGRESS_FILE, "w")):
         file_name = url.split("/")[-1]
         station_id = re.findall(PATTERN_STATION_ID, url)[0]
-        sensor_model = url.split("/")[-1].split("_")[1].upper()
 
-        if sensor_model not in SensorModel._names.values():
-            continue
         if station_id not in stations:
             log(f"Skipp {station_id}")
             continue
