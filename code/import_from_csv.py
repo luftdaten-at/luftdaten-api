@@ -20,10 +20,9 @@ def import_sensor_community_archive_from_csv(csv_file_path: str):
     for row in df.iterrows():
         # check if sensor_id in database
         idx, data = row
-        device = data['sensor_id']
+        device = str(data['sensor_id'])
         time_measured = datetime.fromisoformat(data['timestamp'])
-        sensor_model = {v: k for k, v in SensorModel._names.items()}.get(data['sensor_type'], None)``
-
+        sensor_model = {v: k for k, v in SensorModel._names.items()}.get(data['sensor_type'], None)
         db_station = db.query(Station).filter(Station.device == device).first()
 
         if not db_station or not sensor_model:
@@ -57,9 +56,9 @@ def import_sensor_community_archive_from_csv(csv_file_path: str):
         db.commit()
         db.refresh(db_measurement)
 
-        for dim_name, val in data.item()[6:]:
+        for dim_name, val in list(data.items())[6:]:
             dim = Dimension.get_dimension_from_sensor_community_name(dim_name)
-            if not dim:
+            if not dim or not val:
                 continue
             db_value = Values(
                 dimension=dim,
