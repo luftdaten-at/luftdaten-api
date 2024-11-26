@@ -115,16 +115,16 @@ def main():
     # files that have already been downloaded
     cur_files = set(os.listdir(DOWNLOAD_FOLDER))
     db = next(get_db())
-    stations = set(s.device for s in db.query(Station).all())
+    stations = set(str(s.device) for s in db.query(Station).all())
 
     for url in tqdm(get_urls(), desc="Downloading files", unit="files", file=open(PROGRESS_FILE, "w")):
         file_name = url.split("/")[-1]
         station_id = re.findall(PATTERN_STATION_ID, url)[0]
         if station_id not in stations:
-            print(f"Skipp {station_id}")
+            log(f"Skipp {station_id}")
             continue
         if file_name in cur_files:
-            print(f"Already downloaded: {file_name}")
+            log(f"Already downloaded: {file_name}")
             continue
         download(url)
 
@@ -135,5 +135,4 @@ if __name__ == '__main__':
     except Exception as e:
         import traceback
         s = traceback.format_exc()
-        print(s)
-        log(s) 
+        log(s)
