@@ -2,7 +2,7 @@ services:
   app:
     image: luftdaten/api:staging
     restart: unless-stopped
-    command: /bin/sh -c "alembic upgrade head && uvicorn main:app --host 0.0.0.0 --port 80 --reload & python download_csv.py"
+    command: /bin/sh -c "alembic upgrade head && uvicorn main:app --host 0.0.0.0 --port 80 --reload & (python download_csv.py && python import_from_csv.py)"
     expose:
       - 80
     labels:

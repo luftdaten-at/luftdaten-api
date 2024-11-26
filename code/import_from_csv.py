@@ -1,8 +1,13 @@
 import io
 import pandas as pd
+import os
 from database import get_db
 from models import *
 from enums import SensorModel, Dimension
+
+
+DOWNLOAD_FOLDER = "sensor_community_archive/csv"
+
 
 def import_sensor_community_archive_from_csv(csv: str):
     """
@@ -71,3 +76,22 @@ def import_sensor_community_archive_from_csv(csv: str):
             db.add(db_value)
 
         db.commit()
+
+
+def main():
+    # List all files in the download folder and process them
+    for filename in os.listdir(DOWNLOAD_FOLDER):
+        file_path = os.path.join(DOWNLOAD_FOLDER, filename)
+        
+        # Ensure it's a file (not a directory)
+        if os.path.isfile(file_path):
+            # Read the file content as a string
+            with open(file_path, 'r', encoding='utf-8') as f:
+                csv_content = f.read()
+            
+            # Call the import function
+            import_sensor_community_archive_from_csv(csv_content)
+
+
+if __name__ == "__main__":
+    main()
