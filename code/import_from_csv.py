@@ -50,22 +50,25 @@ def import_sensor_community_archive_from_csv(csv_file_path: str):
             location_id=db_station.location_id
         )
 
-        print(f'Import measurment: {db_measurement}')
-
         db.add(db_measurement)
         db.commit()
         db.refresh(db_measurement)
 
         for dim_name, val in list(data.items())[6:]:
             dim = Dimension.get_dimension_from_sensor_community_name(dim_name)
-            if not dim or not val:
+            try:
+                val = float(val)
+            except ValueError:
+                print(f"Value is not a float: {val}")
                 continue
+            if not dim:
+                continue
+
             db_value = Values(
                 dimension=dim,
-                value=val,
+                value=float(val),
                 measurement_id=db_measurement.id
             )
-            print(f'Import Value: {db_value}')
             db.add(db_value)
 
         db.commit()
