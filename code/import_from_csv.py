@@ -1,6 +1,7 @@
 import io
 import pandas as pd
 import os
+from tqdm import tqdm
 from datetime import datetime
 from database import get_db
 from models import *
@@ -8,6 +9,16 @@ from enums import SensorModel, Dimension
 
 
 DOWNLOAD_FOLDER = "sensor_community_archive/csv"
+LOG_FILE = "sensor_community_archive/log.txt"
+PROGRESS_FILE = "sensor_community_archive/progress.txt"
+
+
+def log(*l):
+    """
+    simple logging 
+    """
+    with open(LOG_FILE, "a") as f:
+        print(' '.join(str(x) for x in l), file=f)
 
 
 def import_sensor_community_archive_from_csv(csv_file_path: str):
@@ -54,12 +65,14 @@ def import_sensor_community_archive_from_csv(csv_file_path: str):
         db.commit()
         db.refresh(db_measurement)
 
+        log(f"Created measurement: {db_measurement}")
+
         for dim_name, val in list(data.items())[6:]:
             dim = Dimension.get_dimension_from_sensor_community_name_import(dim_name)
             try:
                 val = float(val)
             except ValueError:
-                print(f"Value is not a float: {val}")
+                log(f"Value is not a float: {val}")
                 continue
             if not dim:
                 continue
@@ -72,13 +85,14 @@ def import_sensor_community_archive_from_csv(csv_file_path: str):
                 measurement_id=db_measurement.id
             )
             db.add(db_value)
+            log(f"Added value: {db_value}")
 
         db.commit()
 
 
 def main():
     # List all files in the download folder and process them
-    for filename in os.listdir(DOWNLOAD_FOLDER):
+    for filename in tqdm(os.listdir(DOWNLOAD_FOLDER), desc="Import CSV files", unit="Files", file=open(PROGRESS_FILE, "w")):
         file_path = os.path.join(DOWNLOAD_FOLDER, filename)
         
         # Ensure it's a file (not a directory)
