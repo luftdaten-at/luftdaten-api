@@ -29,14 +29,14 @@ PROGRESS_FILE = "sensor_community_archive/progress.txt"
 LOG_FILE = "sensor_community_archive/log.txt"
 
 all_csv_urls = []
+log_file = None
 
 
 def log(*l):
     """
     simple logging 
     """
-    with open(LOG_FILE, "a") as f:
-        print(' '.join(str(x) for x in l), file=f)
+    print(' '.join(str(x) for x in l), file=log_file)
 
 
 def download(url, trys = 5):
@@ -123,7 +123,7 @@ def main():
     """
     global all_csv_urls
 
-    all_csv_urls = set(open(DOWNLOAD_LIST, "r").readlines())
+    all_csv_urls = set(line.strip() for line in open(DOWNLOAD_LIST, "r").readlines())
     # append download list
     list_website(URL)
 
@@ -146,9 +146,11 @@ def main():
 
 
 if __name__ == '__main__':
+    log_file = open(LOG_FILE, 'w')
     try:
         main()
     except Exception as e:
         import traceback
         s = traceback.format_exc()
         log(s)
+    log_file.close()

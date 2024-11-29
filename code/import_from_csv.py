@@ -2,6 +2,7 @@ import io
 import pandas as pd
 import os
 from tqdm import tqdm
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from database import get_db
 from models import *
@@ -90,7 +91,8 @@ def import_sensor_community_archive_from_csv(csv_file_path: str):
 
         db.commit()
 
-
+# singel thread
+'''
 def main():
     # List all files in the download folder and process them
     for filename in tqdm(os.listdir(DOWNLOAD_FOLDER), desc="Import CSV files", unit="Files", file=open(PROGRESS_FILE, "w")):
@@ -100,6 +102,30 @@ def main():
         if os.path.isfile(file_path):
             # Read the file content as a string
             import_sensor_community_archive_from_csv(file_path)
+'''
+
+# multi thread
+def main():
+    # List all files in the download folder
+    files = [
+        os.path.join(DOWNLOAD_FOLDER, filename)
+        for filename in os.listdir(DOWNLOAD_FOLDER)
+        if os.path.isfile(os.path.join(DOWNLOAD_FOLDER, filename))
+    ]
+
+    # Progress tracking with tqdm
+    with open(PROGRESS_FILE, "w") as progress_file:
+        with tqdm(total=len(files), desc="Import CSV files", unit="Files", file=progress_file) as pbar:
+            # ThreadPoolExecutor for parallel processing
+            with ThreadPoolExecutor() as executor:
+                # Define a function to update the progress bar after each task
+                def process_file(file_path):
+                    import_sensor_community_archive_from_csv(file_path)
+                    pbar.update(1)
+
+                # Submit all tasks to the executor
+                for file_path in files:
+                    executor.submit(process_file, file_path)
 
 
 if __name__ == "__main__":
