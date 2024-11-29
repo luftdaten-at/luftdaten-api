@@ -39,7 +39,7 @@ def process_and_import_data(db: Session, data, source):
             logging.debug(f"Sensor Type: {sensor_type}, Wert: {value}, Typ von Wert: {type(value)}")
 
             # Dimension Mapping (wie vorher gezeigt)
-            dimension = Dimension.get_dimension_from_sensor_community_name(sensor_type)
+            dimension = Dimension.get_dimension_from_sensor_community_name_import(sensor_type)
 
             logging.debug(f"Dimension für Sensor Type '{sensor_type}': {dimension}")
 

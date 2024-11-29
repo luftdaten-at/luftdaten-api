@@ -55,7 +55,7 @@ def import_sensor_community_archive_from_csv(csv_file_path: str):
         db.refresh(db_measurement)
 
         for dim_name, val in list(data.items())[6:]:
-            dim = Dimension.get_dimension_from_sensor_community_name(dim_name)
+            dim = Dimension.get_dimension_from_sensor_community_name_import(dim_name)
             try:
                 val = float(val)
             except ValueError:

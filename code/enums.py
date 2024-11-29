@@ -76,6 +76,21 @@ class Dimension():
         NO2: "no2_ppb",
     }
 
+    _sensor_community_names_import = {
+        PM0_1: "P01",
+        PM1_0: "P10",
+        PM2_5: "P2",
+        PM4_0: "P4",
+        PM10_0: "P1",
+        HUMIDITY: "humidity",
+        TEMPERATURE: "temperature",
+        PRESSURE: "pressure",
+        CO2: "co2_ppm",
+        O3: "ozone_ppb",
+        TVOC: "tvoc",
+        NO2: "no2_ppb",
+    }
+
     @classmethod
     def get_unit(cls, dimension_id: int) -> str:
         """
@@ -97,6 +112,10 @@ class Dimension():
     @classmethod
     def get_dimension_from_sensor_community_name(cls, sensor_community_name: str):
         return {v:k for k, v in cls._sensor_community_names.items()}.get(sensor_community_name, None)
+    
+    @classmethod
+    def get_dimension_from_sensor_community_name_import(cls, sensor_community_name: str):
+        return {v:k for k, v in cls._sensor_community_names_import.items()}.get(sensor_community_name, None)
 
 
 class SensorModel():
