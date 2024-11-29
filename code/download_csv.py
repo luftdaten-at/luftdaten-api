@@ -107,14 +107,6 @@ def list_website(url, trys = 5):
             print(csv_url, file=open(DOWNLOAD_LIST, 'a'))
     return True
 
-def get_urls():
-    """
-    generator to yiled urls from download list 
-    """
-    with open(DOWNLOAD_LIST, "r") as f:
-        while (url := f.readline()):
-            yield url.strip()
-
 
 def main():
     """
@@ -132,7 +124,10 @@ def main():
     db = next(get_db())
     stations = set(str(s.device) for s in db.query(Station).all())
 
-    for url in tqdm(get_urls(), desc="Downloading files", unit="files", file=open(PROGRESS_FILE, "w")):
+    urls_to_download = [url.strip() for url in open(DOWNLOAD_LIST, "r").readlines()]
+    urls_to_download.sort(reverse=True)
+
+    for url in tqdm(urls_to_download, desc="Downloading files", unit="files", file=open(PROGRESS_FILE, "w")):
         file_name = url.split("/")[-1]
         station_id = re.findall(PATTERN_STATION_ID, url)[0]
 
@@ -141,7 +136,7 @@ def main():
             continue
         if file_name in cur_files:
             log(f"Already downloaded: {file_name}")
-            continue
+            break
         download(url)
 
 
