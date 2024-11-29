@@ -12,13 +12,14 @@ DOWNLOAD_FOLDER = "sensor_community_archive/csv"
 LOG_FILE = "sensor_community_archive/log.txt"
 PROGRESS_FILE = "sensor_community_archive/progress.txt"
 
+log_file = None
+
 
 def log(*l):
     """
     simple logging 
     """
-    with open(LOG_FILE, "a") as f:
-        print(' '.join(str(x) for x in l), file=f)
+    print(' '.join(str(x) for x in l), file=log_file)
 
 
 def import_sensor_community_archive_from_csv(csv_file_path: str):
@@ -65,7 +66,7 @@ def import_sensor_community_archive_from_csv(csv_file_path: str):
         db.commit()
         db.refresh(db_measurement)
 
-        log(f"Created measurement: {db_measurement}")
+        log(f"Created measurement: {vars(db_measurement)}")
 
         for dim_name, val in list(data.items())[6:]:
             dim = Dimension.get_dimension_from_sensor_community_name_import(dim_name)
@@ -85,7 +86,7 @@ def import_sensor_community_archive_from_csv(csv_file_path: str):
                 measurement_id=db_measurement.id
             )
             db.add(db_value)
-            log(f"Added value: {db_value}")
+            log(f"Added value: {vars(db_value)}")
 
         db.commit()
 
@@ -102,4 +103,6 @@ def main():
 
 
 if __name__ == "__main__":
+    log_file = open(LOG_FILE, 'w')
     main()
+    log_file.close()
