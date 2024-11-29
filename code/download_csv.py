@@ -27,6 +27,7 @@ DOWNLOAD_LIST = "sensor_community_archive/download_list.txt"
 PROGRESS_FILE = "sensor_community_archive/progress.txt"
 # file where logs are saved
 LOG_FILE = "sensor_community_archive/log.txt"
+
 all_csv_urls = []
 
 
@@ -85,22 +86,26 @@ def list_website(url, trys = 5):
         return
 
     soup = BeautifulSoup(page, "html.parser")
-    # walk into all months
+
     for item in reversed(soup.find_all("a")):
         link = item.get("href")
         if re.fullmatch(PATTERN_DAY, link):
-            list_website(urljoin(url, link)) 
+            if not list_website(urljoin(url, link)):
+                return False
         if re.fullmatch(PATTERN_YEAR, link):
-            list_website(urljoin(url, link))
+            if not list_website(urljoin(url, link)):
+                return False
         if link.endswith(".csv") or link.endswith(".gz"):
             for sensor_name in SensorModel._names.values():
                 if sensor_name.lower() in link:
                     break
             else:
                 continue
-            all_csv_urls.append(urljoin(url, link))
-            print(urljoin(url, link), file=open(DOWNLOAD_LIST, 'a'))
-
+            csv_url = urljoin(url, link)
+            if csv_url in all_csv_urls:
+                return False
+            print(csv_url, file=open(DOWNLOAD_LIST, 'a'))
+    return True
 
 def get_urls():
     """
@@ -112,6 +117,16 @@ def get_urls():
 
 
 def main():
+    """
+    1. update download list with all url newer than the newst in the download list
+    2. download missing files
+    """
+    global all_csv_urls
+
+    all_csv_urls = set(open(DOWNLOAD_LIST, "r").readlines())
+    # append download list
+    list_website(URL)
+
     # files that have already been downloaded
     cur_files = set(os.listdir(DOWNLOAD_FOLDER))
     db = next(get_db())
