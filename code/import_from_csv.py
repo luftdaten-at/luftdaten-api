@@ -67,14 +67,14 @@ def import_sensor_community_archive_from_csv(csv_file_path: str):
         db.commit()
         db.refresh(db_measurement)
 
-        log(f"Created measurement: {vars(db_measurement)}")
+        #log(f"Created measurement: {vars(db_measurement)}")
 
         for dim_name, val in list(data.items())[6:]:
             dim = Dimension.get_dimension_from_sensor_community_name_import(dim_name)
             try:
                 val = float(val)
             except ValueError:
-                log(f"Value is not a float: {val}")
+                #log(f"Value is not a float: {val}")
                 continue
             if not dim:
                 continue
@@ -87,7 +87,7 @@ def import_sensor_community_archive_from_csv(csv_file_path: str):
                 measurement_id=db_measurement.id
             )
             db.add(db_value)
-            log(f"Added value: {vars(db_value)}")
+            #log(f"Added value: {vars(db_value)}")
 
         db.commit()
 
