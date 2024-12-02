@@ -13,8 +13,8 @@ from itertools import groupby
 
 from models import Station, Location, Measurement, Values, StationStatus, HourlyDimensionAverages, City
 from schemas import StationDataCreate, SensorsCreate, StationStatusCreate
-from utils import get_or_create_location, download_csv, get_or_create_station
-from enums import Precision, OutputFormat
+from utils import get_or_create_location, download_csv, get_or_create_station, standard_output_to_csv, standard_output_to_json
+from enums import Precision, OutputFormat, Order, Dimension
 
 
 router = APIRouter()
@@ -285,14 +285,47 @@ async def create_station_data(
     return {"status": "success"}
 
 
+@router.get("/topn", response_class=Response, tags=["station"])
+async def get_topn_stations_by_dim(
+    n: int = Query(..., description="limit"),
+    dimension: int = Query(..., description="Dimension ID to compare"),
+    order: Order = Query(Order.MIN, description="Get (Min/Max) n stations"),
+    output_format: OutputFormat = Query(OutputFormat.CSV, description="Ouput format"),
+    db: Session = Depends(get_db)
+):
+
+    compare = Values.value
+    if order == Order.MAX:
+        compare = Values.value.desc()
+    q = (
+        db.query(
+            Station.device,
+            Measurement.time_measured,
+            Values.dimension,
+            Values.value,
+        )
+        .join(Measurement, Measurement.station_id == Station.id)
+        .join(Values, Values.measurement_id == Measurement.id)
+        .filter(Station.last_active == Measurement.time_measured)
+        .filter(Values.dimension == dimension)
+        .order_by(compare)
+        .limit(n)
+    )
+
+    if output_format == 'csv':
+        return Response(content=standard_output_to_csv(q.all()), media_type="text/csv")
+    elif output_format == 'json':
+        return Response(content=standard_output_to_json(q.all()), media_type="application/json")
+
+
 @router.get("/historical", response_class=Response, tags=["station"])
 async def get_historical_station_data(
     station_ids: str = Query(..., description="Comma-separated list of station devices"),
     start: str = Query(None, description="Supply in format: YYYY-MM-DDThh:mm. Time is optional."),
     end: str = Query(None, description="Supply in format: YYYY-MM-DDThh:mm. Time is optional."),
-    output_format: OutputFormat = Query(OutputFormat.CSV, description="Ouput format"),
     precision: Precision = Query(Precision.MAX, description="Precision of data points"),
     city_slugs: str = Query(None, description="Comma-seperated list of city_slugs"),
+    output_format: OutputFormat = Query(OutputFormat.CSV, description="Ouput format"),
     db: Session = Depends(get_db)
 ):
     # Konvertiere die Liste von station_devices in eine Liste
@@ -332,28 +365,9 @@ async def get_historical_station_data(
         q = q.filter(truncated_time <= end_date)
 
     if output_format == 'csv':
-        csv_data = "device,time_measured,dimension,value\n"
-        for device, time, dim, val in q.all():
-            csv_data += f"{device},{time.strftime("%Y-%m-%dT%H:%M")},{dim},{val}\n"
-        return Response(content=csv_data, media_type="text/csv")
+        return Response(content=standard_output_to_csv(q.all()), media_type="text/csv")
     elif output_format == 'json':
-        groups = groupby(q.all(), lambda x: (x[0], x[1]))
-        json_data = [
-            {
-                "device": device,
-                "time_measured": time.strftime("%Y-%m-%dT%H:%M"),
-                "values": [
-                    {
-                        "dimension": dim,
-                        "value": val
-                    } 
-                    for (_, _, dim, val) in data
-                ]
-            }
-            for ((device, time), data) in groups
-        ]
-
-        return Response(content=json.dumps(json_data), media_type="application/json")
+        return Response(content=standard_output_to_json(q.all()), media_type="application/json")
 
 
 @router.get("/all", response_class=Response, tags=["station"])

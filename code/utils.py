@@ -1,8 +1,10 @@
 import requests
+import json
 from geopy.geocoders import Nominatim
 from timezonefinder import TimezoneFinder
 from sqlalchemy.orm import Session
 from fastapi import HTTPException
+from itertools import groupby
 from models import City, Country, Location, Station
 import logging
 from schemas import StationDataCreate
@@ -163,3 +165,59 @@ def get_or_create_station(db: Session, station: StationDataCreate):
             db.commit()
 
     return db_station
+
+def standard_output_to_csv(data) -> str:
+    """
+    data: list[(
+                Station.device,
+                Measurement.time_measured,
+                Values.dimension,
+                Values.value
+           )]
+    ret: str -> csv: device,time_measured,dimension,value\n
+    """
+
+    csv_data = "device,time_measured,dimension,value\n"
+    for device, time, dim, val in data:
+        csv_data += f"{device},{time.strftime("%Y-%m-%dT%H:%M")},{dim},{val}\n"
+    return csv_data
+
+def standard_output_to_json(data):
+    """
+    data: list[(
+                Station.device,
+                Measurement.time_measured,
+                Values.dimension,
+                Values.value
+           )]
+    ret: str -> json example:
+    [
+        {
+                "device": "75509",
+                "time_measured": "2024-11-29T08:18",
+                "values": [
+                {
+                    "dimension": 7,
+                    "value": 28.32
+                }
+        },
+    ]
+    """
+
+    groups = groupby(data, lambda x: (x[0], x[1]))
+    json_data = [
+        {
+            "device": device,
+            "time_measured": time.strftime("%Y-%m-%dT%H:%M"),
+            "values": [
+                {
+                    "dimension": dim,
+                    "value": val
+                } 
+                for (_, _, dim, val) in data
+            ]
+        }
+        for ((device, time), data) in groups
+    ]
+
+    return json.dumps(json_data)
