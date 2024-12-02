@@ -222,7 +222,7 @@ class Precision(str, Enum):
     MONTHLY = "month"
     YEARYLY = "year"
 
-    _to_time_frame = {
+    __to_time_frame = {
         MAX: "milliseconds",
         HOURLY: "hour",
         DAYLY: "day",
@@ -233,7 +233,7 @@ class Precision(str, Enum):
 
     @classmethod
     def get_time_frame(cls, precision: str):
-        return cls._to_time_frame(precision)
+        return cls.__to_time_frame[precision]
 
 
 class OutputFormat(str, Enum):
