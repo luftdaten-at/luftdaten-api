@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from models import Station, Measurement, Values, Location
 from datetime import datetime
 from utils import get_or_create_location
-from enums import Dimension
+from enums import Dimension, SensorModel
 
 def process_and_import_data(db: Session, data, source):
     for entry_index, entry in enumerate(data):
@@ -39,13 +39,17 @@ def process_and_import_data(db: Session, data, source):
             logging.debug(f"Sensor Type: {sensor_type}, Wert: {value}, Typ von Wert: {type(value)}")
 
             # Dimension Mapping (wie vorher gezeigt)
-            dimension = Dimension.get_dimension_from_sensor_community_name(sensor_type)
+            dimension = Dimension.get_dimension_from_sensor_community_name_import(sensor_type)
 
             logging.debug(f"Dimension für Sensor Type '{sensor_type}': {dimension}")
 
             if dimension:
+                sensor_model = {v:k for k,v in SensorModel._names.items()}.get(entry["sensor"]["sensor_type"]["name"], None)
+                if not sensor_model:
+                    continue
                 sensors.setdefault(str(entry["sensor"]["id"]), {
-                    "type": entry["sensor"]["sensor_type"]["id"],
+                    # TODO: take name and translate to ID
+                    "type": sensor_model,
                     "data": {}
                 })
 
