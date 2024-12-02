@@ -306,16 +306,7 @@ async def get_historical_station_data(
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DDThh:mm")
 
-    time_fram = None
-    if precision == Precision.MAX:
-        time_fram = 'milliseconds'
-    if precision == Precision.HOURLY:
-        time_fram = 'hour'
-    if precision == Precision.DAYLY:
-        time_fram = 'day'
-    if precision == Precision.DAYLY:
-        time_fram = 'day'
-
+    time_fram = Precision.get_time_frame(precision)
     truncated_time = func.date_trunc(time_fram, Measurement.time_measured).label('time')
 
     q = (
