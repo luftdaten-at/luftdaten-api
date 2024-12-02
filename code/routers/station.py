@@ -14,6 +14,7 @@ from itertools import groupby
 from models import Station, Location, Measurement, Values, StationStatus, HourlyDimensionAverages, City
 from schemas import StationDataCreate, SensorsCreate, StationStatusCreate
 from utils import get_or_create_location, download_csv, get_or_create_station
+from enums import Precision, OutputFormat
 
 
 router = APIRouter()
@@ -284,17 +285,6 @@ async def create_station_data(
     return {"status": "success"}
 
 
-class Precision(str, Enum):
-    MAX = "all data points"
-    HOURLY = "hourly avg (one data point per hour)"
-    DAYLY = "dayly avg (one data point per day)"
-
-
-class OutputFormat(str, Enum):
-    JSON = "json"
-    CSV = "csv"
-
-
 @router.get("/historical", response_class=Response, tags=["station"])
 async def get_historical_station_data(
     station_ids: str = Query(..., description="Comma-separated list of station devices"),
@@ -321,6 +311,8 @@ async def get_historical_station_data(
         time_fram = 'milliseconds'
     if precision == Precision.HOURLY:
         time_fram = 'hour'
+    if precision == Precision.DAYLY:
+        time_fram = 'day'
     if precision == Precision.DAYLY:
         time_fram = 'day'
 

@@ -1,3 +1,6 @@
+from enum import Enum
+
+
 class Dimension():
     PM0_1 = 1
     PM1_0 = 2
@@ -209,3 +212,30 @@ class Source():
         :return: Der zugehörige Name oder 'Unknown', wenn kein Name vorhanden ist
         """
         return cls._names.get(source_id, "Unknown")
+
+
+class Precision(str, Enum):
+    MAX = "all"
+    HOURLY = "hour"
+    DAYLY = "day"
+    WEEKLY = "week"
+    MONTHLY = "month"
+    YEARYLY = "year"
+
+    _to_time_frame = {
+        MAX: "milliseconds",
+        HOURLY: "hour",
+        DAYLY: "day",
+        WEEKLY: "week",
+        MONTHLY: "month",
+        YEARYLY: "year",
+    }
+
+    @classmethod
+    def get_time_frame(cls, precision: str):
+        return cls._to_time_frame(precision)
+
+
+class OutputFormat(str, Enum):
+    JSON = "json"
+    CSV = "csv"
