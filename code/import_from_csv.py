@@ -2,9 +2,10 @@ import io
 import pandas as pd
 import os
 from tqdm import tqdm
+from sqlalchemy.orm import sessionmaker, scoped_session
+from sqlalchemy import create_engine
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
-from database import get_db
 from models import *
 from enums import SensorModel, Dimension
 
@@ -14,6 +15,18 @@ LOG_FILE = "sensor_community_archive/log.txt"
 PROGRESS_FILE = "sensor_community_archive/progress.txt"
 
 log_file = None
+
+# INIT DB
+# Umgebungsvariablen auslesen
+DB_USER = os.getenv("POSTGRES_USER", "")
+DB_PASS = os.getenv("POSTGRES_PASSWORD", "")
+DB_HOST = os.getenv("DB_HOST", "")
+DB_NAME = os.getenv("POSTGRES_DB", "")
+
+# Erstellen der korrekten DATABASE_URL mit f-String
+DATABASE_URL = f"postgresql://{DB_USER}:{DB_PASS}@{DB_HOST}/{DB_NAME}"
+engine = create_engine(DATABASE_URL)
+db_session = scoped_session(sessionmaker(autocommit=False, autoflush=False, bind=engine))
 
 
 def log(*l):
@@ -27,7 +40,7 @@ def import_sensor_community_archive_from_csv(csv_file_path: str):
     """
     sensor_id;sensor_type;location;lat;lon;timestamp;pressure;altitude;pressure_sealevel;temperature
     """
-    db = next(get_db())
+    db = db_session()
     df = pd.read_csv(csv_file_path, encoding='utf8', sep=";")
 
     for row in df.iterrows():
@@ -90,6 +103,7 @@ def import_sensor_community_archive_from_csv(csv_file_path: str):
             #log(f"Added value: {vars(db_value)}")
 
         db.commit()
+        db.close()
 
 # singel thread
 '''
