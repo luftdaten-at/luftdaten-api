@@ -68,7 +68,7 @@ async def get_current_station_data_all(db: Session = Depends(get_db)):
 async def get_history_station_data(
     station_ids: str = None,
     smooth: str = "100",
-    start: str = None,
+    start: str = Query(None, description="Supply in ISO format: YYYY-MM-DDThh:mm+xx:xx. Time is optional."),
     db: Session = Depends(get_db)
 ):
     """
@@ -322,8 +322,8 @@ async def get_topn_stations_by_dim(
 @router.get("/historical", response_class=Response, tags=["station"])
 async def get_historical_station_data(
     station_ids: str = Query(..., description="Comma-separated list of station devices"),
-    start: str = Query(None, description="Supply in format: YYYY-MM-DDThh:mm. Time is optional."),
-    end: str = Query(None, description="Supply in format: YYYY-MM-DDThh:mm. Time is optional."),
+    start: str = Query(None, description="Supply in ISO format: YYYY-MM-DDThh:mm+xx:xx. Time is optional."),
+    end: str = Query(None, description="Supply in ISO format: YYYY-MM-DDThh:mm+xx:xx. Time is optional."),
     precision: Precision = Query(Precision.MAX, description="Precision of data points"),
     city_slugs: str = Query(None, description="Comma-seperated list of city_slugs"),
     output_format: OutputFormat = Query(OutputFormat.CSV, description="Ouput format"),
