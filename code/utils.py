@@ -67,7 +67,9 @@ def get_or_create_location(db: Session, lat: float, lon: float, height: float):
     if city is None:
         try:
             timezone_str = tf.timezone_at(lng=float(lon), lat=float(lat))
-            city = City(name=city_name, country_id=country.id, tz=timezone_str)
+
+            clat, clon = Nominatim(user_agent="api.luftdaten.at").geocode(city_name)[1]
+            city = City(name=city_name, country_id=country.id, tz=timezone_str, lat=clat, lon=clon)
             db.add(city)
             db.commit()
             db.refresh(city)
