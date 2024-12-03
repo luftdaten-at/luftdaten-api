@@ -1,4 +1,5 @@
 import json
+from geopy.geocoders import Nominatim
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.orm import Session
 from database import get_db
@@ -44,7 +45,16 @@ async def get_average_measurements_by_city(
     db: Session = Depends(get_db)
 ):
     db_city = db.query(City).filter(City.slug == city_slug).first()
-    (lon, lat) = db.query(func.avg(Location.lon), func.avg(Location.lat)).filter(Location.city_id == City.id).first()
+
+    if not db_city:
+        raise HTTPException(status_code=404, detail="City not found")
+
+    if not all([db_city.lat, db_city.lon]):
+        lat, lon = Nominatim(user_agent="api.luftdaten.at").geocode(city_slug)[1]
+        db_city.lat = lat
+        db_city.lon = lon
+        db.commit()
+
     q = (
         db.query(
             Values.dimension,
@@ -61,7 +71,7 @@ async def get_average_measurements_by_city(
         "type": "Feature",
         "geometry": {
             "type": "Point",
-            "coordinates": [lon, lat],
+            "coordinates": [db_city.lon, db_city.lat],
         },
         "properties": {
             "city_slug": db_city.slug,
