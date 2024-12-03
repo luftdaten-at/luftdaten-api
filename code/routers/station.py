@@ -75,7 +75,8 @@ async def get_history_station_data(
     Returns the values from a single station in a given time.
     """
 
-    start_time = datetime.strptime(start, "%Y-%m-%dT%H:%M") if start else None
+    # TODO: wich time zone should the user enter
+    start_time = datetime.fromisoformat(start) if start else None
     station_ids = station_ids.split(',') if station_ids else None
 
     q = (
@@ -113,7 +114,7 @@ async def get_history_station_data(
 
     csv = "timestamp,sid,latitude,longitude,pm1,pm25,pm10\n"
     csv += "\n".join(
-        ",".join([time.strftime("%Y-%m-%dT%H:%M")] + [str(o) for o in other])
+        ",".join([time.isoformat()] + [str(o) for o in other])
         for time, *other in q.all()
     )
 
@@ -334,8 +335,8 @@ async def get_historical_station_data(
 
     # Konvertiere start und end in datetime-Objekte
     try:
-        start_date = datetime.strptime(start, "%Y-%m-%dT%H:%M") if start else None
-        end_date = datetime.strptime(end, "%Y-%m-%dT%H:%M") if end else None 
+        start_date = datetime.fromisoformat(start) if start else None
+        end_date = datetime.fromisoformat(end) if end else None 
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DDThh:mm")
 

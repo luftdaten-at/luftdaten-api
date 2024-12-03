@@ -77,7 +77,7 @@ async def get_average_measurements_by_city(
             "city_slug": db_city.slug,
             "country": db_city.country.name,
             "timezone": db_city.tz,
-            "time": datetime.now(ZoneInfo('UTC')).isoformat(),
+            "time": datetime.now(ZoneInfo('UTC')).replace(second=0, microsecond=0).isoformat(),
             #"height": db_location.height,
             "values":[{"dimension": dim, "value": val} for dim, val in q.all()] 
         }
