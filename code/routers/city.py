@@ -1,11 +1,13 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+import json
+from geopy.geocoders import Nominatim
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.orm import Session
 from database import get_db
 from sqlalchemy import func, desc
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from models import City, Country, Station, Measurement, Values
+from models import City, Country, Station, Measurement, Values, Location
 from enums import Dimension
 
 
@@ -39,6 +41,53 @@ async def get_all_cities(db: Session = Depends(get_db)):
 
 @router.get("/current", tags=["city", "current"])
 async def get_average_measurements_by_city(
+    city_slug: str = Query(..., description="The name of the city to get the average measurements for."),
+    db: Session = Depends(get_db)
+):
+    db_city = db.query(City).filter(City.slug == city_slug).first()
+
+    if not db_city:
+        raise HTTPException(status_code=404, detail="City not found")
+
+    if not all([db_city.lat, db_city.lon]):
+        lat, lon = Nominatim(user_agent="api.luftdaten.at").geocode(city_slug)[1]
+        db_city.lat = lat
+        db_city.lon = lon
+        db.commit()
+
+    q = (
+        db.query(
+            Values.dimension,
+            func.avg(Values.value) 
+        )
+        .join(Measurement)
+        .join(Location)
+        .join(City)
+        .filter(City.slug == city_slug)
+        .filter(Values.value != 'nan')
+        .group_by(Values.dimension)
+    )
+    j = {
+        "type": "Feature",
+        "geometry": {
+            "type": "Point",
+            "coordinates": [db_city.lon, db_city.lat],
+        },
+        "properties": {
+            "city_slug": db_city.slug,
+            "country": db_city.country.name,
+            "timezone": db_city.tz,
+            "time": datetime.now(ZoneInfo('UTC')).replace(second=0, microsecond=0).isoformat(),
+            #"height": db_location.height,
+            "values":[{"dimension": dim, "value": val} for dim, val in q.all()] 
+        }
+    }
+
+    return Response(content=json.dumps(j), media_type="pplication/geo+json")
+
+
+@router.get("/currentold", tags=["city", "current"])
+async def get_average_measurements_by_city_old(
     city_slug: str = Query(..., description="The name of the city to get the average measurements for."),
     db: Session = Depends(get_db)
 ):

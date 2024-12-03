@@ -33,11 +33,16 @@ class City(Base):
     country = relationship("Country", back_populates="cities")
     locations = relationship("Location", back_populates="city")
 
-    def __init__(self, name, country_id, tz):
+    lat = Column(Float)
+    lon = Column(Float)
+
+    def __init__(self, name, country_id, tz, lat, lon):
         self.name = name
         self.slug = slugify(name)
         self.country_id = country_id
         self.tz = tz
+        self.lat = lat
+        self.lon = lon
 
 
 class Location(Base):
