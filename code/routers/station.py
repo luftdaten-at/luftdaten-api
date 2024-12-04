@@ -56,7 +56,7 @@ async def get_current_station_data_all(db: Session = Depends(get_db)):
     )
 
     csv = "sid,latitude,longitude,pm1,pm25,pm10\n"
-    csv += "\n".join(",".join(str(x) for x in q.all()))
+    csv += "\n".join(",".join([str(y) for y in x] for x in q.all()))
 
     return Response(content=csv, media_type="text/csv")
 
