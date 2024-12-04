@@ -29,7 +29,6 @@ async def get_current_station_data_all(db: Session = Depends(get_db)):
 
     q = (
         db.query(
-            Measurement.time_measured,
             Station.device,
             Location.lat,
             Location.lon,
