@@ -29,7 +29,6 @@ async def get_current_station_data_all(db: Session = Depends(get_db)):
 
     q = (
         db.query(
-            Measurement.time_measured,
             Station.device,
             Location.lat,
             Location.lon,
@@ -55,11 +54,8 @@ async def get_current_station_data_all(db: Session = Depends(get_db)):
         .order_by(Measurement.time_measured)
     )
 
-    csv = "timestamp,sid,latitude,longitude,pm1,pm25,pm10\n"
-    csv += "\n".join(
-        ",".join([time.strftime("%Y-%m-%dT%H:%M")] + [str(o) for o in other])
-        for time, *other in q.all()
-    )
+    csv = "sid,latitude,longitude,pm1,pm25,pm10\n"
+    csv += "\n".join(",".join([str(y) for y in x]) for x in q.all())
 
     return Response(content=csv, media_type="text/csv")
 
