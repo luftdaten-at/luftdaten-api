@@ -48,9 +48,9 @@ async def get_current_station_data_all(db: Session = Depends(get_db)):
             Location.lat,
             Location.lon
         )
-        .having(func.avg(case((Values.dimension == 2, Values.value))).isnot(None))
-        .having(func.avg(case((Values.dimension == 3, Values.value))).isnot(None))
-        .having(func.avg(case((Values.dimension == 5, Values.value))).isnot(None))
+        #.having(func.avg(case((Values.dimension == 2, Values.value))).isnot(None))
+        #.having(func.avg(case((Values.dimension == 3, Values.value))).isnot(None))
+        #.having(func.avg(case((Values.dimension == 5, Values.value))).isnot(None))
         .order_by(Measurement.time_measured)
     )
 
