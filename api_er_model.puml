@@ -1,0 +1,81 @@
+@startuml
+entity "Country" as Country {
+    + id : Integer [PK]
+    + name : String [unique, index]
+    + slug : String [unique, index]
+    + code : String [unique, index]
+}
+
+entity "City" as City {
+    + id : Integer [PK]
+    + name : String [index]
+    + slug : String [unique, index]
+    + tz : String
+    + lat : Float
+    + lon : Float
+    --
+    + country_id : Integer [FK]
+}
+
+entity "Location" as Location {
+    + id : Integer [PK]
+    + lat : Float
+    + lon : Float
+    + height : Float
+    --
+    + city_id : Integer [FK]
+    + country_id : Integer [FK]
+}
+
+entity "Station" as Station {
+    + id : Integer [PK]
+    + device : String [unique, index]
+    + firmware : String
+    + apikey : String
+    + last_active : DateTime
+    + source : Integer
+    --
+    + location_id : Integer [FK]
+}
+
+entity "Measurement" as Measurement {
+    + id : Integer [PK]
+    + time_received : DateTime
+    + time_measured : DateTime
+    + sensor_model : Integer
+    --
+    + location_id : Integer [FK]
+    + station_id : Integer [FK]
+}
+
+entity "Values" as Values {
+    + id : Integer [PK]
+    + dimension : Integer
+    + value : Float
+    --
+    + measurement_id : Integer [FK]
+}
+
+entity "StationStatus" as StationStatus {
+    + id : Integer [PK]
+    + station_id : Integer [FK]
+    + timestamp : DateTime
+    + level : Integer
+    + message : String
+}
+
+entity "HourlyDimensionAverages" as HourlyDimensionAverages {
+    + station_id : Integer [PK, FK]
+    + hour : DateTime [PK]
+    + dimension_avg : JSON
+}
+
+Country ||--o{ City : "has"
+City ||--o{ Location : "has"
+Country ||--o{ Location : "has"
+Location ||--o{ Station : "has"
+Station ||--o{ Measurement : "records"
+Measurement ||--o{ Values : "has"
+Station ||--o{ StationStatus : "tracks"
+Station ||--o{ HourlyDimensionAverages : "calculates"
+@enduml

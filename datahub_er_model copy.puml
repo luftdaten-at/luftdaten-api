@@ -1,0 +1,50 @@
+@startuml
+entity "Station" as Station {
+    + id : Integer [PK]
+    + device : String [unique, index]
+    + firmware : String
+    + apikey : String
+    + last_active : DateTime
+    + source : Integer
+    --
+    + current_campaign_id : Integer [FK]
+}
+
+entity "Measurement" as Measurement {
+    + id : Integer [PK]
+    + time_received : DateTime
+    + time_measured : DateTime
+    + sensor_model : Integer
+    --
+    + station_id : Integer [FK]
+    + room_id: Integer [FK]
+    + campaign_id : Integer [FK]
+}
+
+entity "Values" as Values {
+    + id : Integer [PK]
+    + dimension : Integer
+    + value : Float
+    --
+    + measurement_id : Integer [FK]
+}
+
+entity "StationStatus" as StationStatus {
+    + id : Integer [PK]
+    + station_id : Integer [FK]
+    + timestamp : DateTime
+    + level : Integer
+    + message : String
+}
+
+entity "Room" as room {
+    + id: Integer [PK]
+    + name: String
+}
+
+Station ||--o{ Measurement : "records"
+Measurement ||--o{ Values : "has"
+Station ||--o{ StationStatus : "tracks"
+room ||--o{ Measurement : "has"
+
+@enduml
