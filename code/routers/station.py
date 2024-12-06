@@ -48,9 +48,9 @@ async def get_current_station_data_all(db: Session = Depends(get_db)):
             Location.lat,
             Location.lon
         )
-        .having(func.avg(case((Values.dimension == 2, Values.value))).isnot(None))
-        .having(func.avg(case((Values.dimension == 3, Values.value))).isnot(None))
-        .having(func.avg(case((Values.dimension == 5, Values.value))).isnot(None))
+        #.having(func.avg(case((Values.dimension == 2, Values.value))).isnot(None))
+        #.having(func.avg(case((Values.dimension == 3, Values.value))).isnot(None))
+        #.having(func.avg(case((Values.dimension == 5, Values.value))).isnot(None))
         .order_by(Measurement.time_measured)
     )
 
@@ -290,7 +290,8 @@ async def get_topn_stations_by_dim(
     output_format: OutputFormat = Query(OutputFormat.CSV, description="Ouput format"),
     db: Session = Depends(get_db)
 ):
-
+    LOWER_BOUND = 0
+    UPPER_BOUND = 999
     compare = Values.value
     if order == Order.MAX:
         compare = Values.value.desc()
@@ -305,6 +306,8 @@ async def get_topn_stations_by_dim(
         .join(Values, Values.measurement_id == Measurement.id)
         .filter(Station.last_active == Measurement.time_measured)
         .filter(Values.dimension == dimension)
+        .filter(Values.value > LOWER_BOUND)
+        .filter(Values.value < UPPER_BOUND)
         .order_by(compare)
         .limit(n)
     )
