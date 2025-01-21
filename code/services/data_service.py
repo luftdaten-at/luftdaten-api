@@ -6,6 +6,12 @@ from datetime import datetime
 from utils import get_or_create_location
 from enums import Dimension, SensorModel
 
+
+def sensorcommunity_import_grouped_by_location(db: Session, data: dict, source: int):
+    for row in data:
+        
+        print(row)
+
 def process_and_import_data(db: Session, data, source):
     for entry_index, entry in enumerate(data):
         logging.debug(f"Verarbeite Eintrag {entry_index}: {entry}")
