@@ -9,8 +9,31 @@ from enums import Dimension, SensorModel
 
 def sensorcommunity_import_grouped_by_location(db: Session, data: dict, source: int):
     for row in data:
+        # find station base on location
+        loc = db.query(Location).filter(
+            Location.lon == row['location']['longitude'],
+            Location.lat == row['location']['latitude']
+        ).first()
+
+        if not loc:
+            loc = Location(
+                lat=float(row['location']['latitude']),
+                lon=float(row['location']['longitude']),
+                height=float(row['location']['altitude'])
+            )
+            db.add(loc)
+            db.commit()
+            db.refresh(loc)
         
-        print(row)
+        station = db.query(Station).filter(
+            Station.location == loc
+        ).first()
+
+        if not station:
+            # creaet station
+            pass
+
+        print(loc)
 
 def process_and_import_data(db: Session, data, source):
     for entry_index, entry in enumerate(data):
