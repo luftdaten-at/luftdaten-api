@@ -30,7 +30,7 @@ class City(Base):
     tz = Column(String, nullable=True)
     # Relationships:
     country_id = Column(Integer, ForeignKey('countries.id'))
-    country = relationship("Country", back_populates="cities")
+    country = relationship("Country", back_populates="cities", cascade="all,delete")
     locations = relationship("Location", back_populates="city")
 
     lat = Column(Float)
@@ -54,9 +54,9 @@ class Location(Base):
     height = Column(Float)
     # Relationships:
     city_id = Column(Integer, ForeignKey('cities.id'))
-    city = relationship("City", back_populates="locations")
+    city = relationship("City", back_populates="locations", cascade="all,delete")
     country_id = Column(Integer, ForeignKey('countries.id'))
-    country = relationship("Country")
+    country = relationship("Country", cascade="all,delete")
     stations = relationship("Station", back_populates="location")
     measurements = relationship("Measurement", back_populates="location")
 
@@ -72,7 +72,7 @@ class Station(Base):
     source = Column(Integer)
     # Relationships:
     location_id = Column(Integer, ForeignKey('locations.id'))
-    location = relationship("Location", back_populates="stations")
+    location = relationship("Location", back_populates="stations", cascade="all,delete")
     measurements = relationship("Measurement", back_populates="station")
     hourly_avg = relationship("HourlyDimensionAverages", back_populates="station")
     stationStatus = relationship("StationStatus", back_populates="station")
@@ -87,9 +87,9 @@ class Measurement(Base):
     sensor_model = Column(Integer)
     # Relationships:
     location_id = Column(Integer, ForeignKey('locations.id'))
-    location = relationship("Location", back_populates="measurements")
+    location = relationship("Location", back_populates="measurements", cascade="all,delete")
     station_id = Column(Integer, ForeignKey('stations.id'))
-    station = relationship("Station", back_populates="measurements")
+    station = relationship("Station", back_populates="measurements", cascade="all,delete")
     values = relationship("Values", back_populates="measurement")
 
 
@@ -100,8 +100,8 @@ class Values(Base):
     dimension = Column(Integer)
     value = Column(Float)
     # Relationships:
-    measurement_id = Column(Integer, ForeignKey('measurements.id'))
-    measurement = relationship("Measurement", back_populates="values")
+    measurement_id = Column(Integer, ForeignKey('measurements.id'), )
+    measurement = relationship("Measurement", back_populates="values", cascade="all,delete")
 
 
 class StationStatus(Base):
@@ -109,7 +109,7 @@ class StationStatus(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     station_id = Column(Integer, ForeignKey('stations.id'))
-    station = relationship("Station", back_populates="stationStatus")
+    station = relationship("Station", back_populates="stationStatus", cascade="all,delete")
     timestamp = Column(DateTime)
     level = Column(Integer)
     message = Column(String)
