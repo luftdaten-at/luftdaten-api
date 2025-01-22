@@ -1,7 +1,6 @@
 from sqlalchemy import Column, Integer, String, Float, ForeignKey, DateTime, JSON
 from sqlalchemy.orm import relationship
 from database import Base
-
 from slugify import slugify
 
 
@@ -12,8 +11,9 @@ class Country(Base):
     name = Column(String, unique=True, index=True)
     slug = Column(String, unique=True, index=True)
     code = Column(String, unique=True, index=True)
-    # Relationships:
-    cities = relationship("City", back_populates="country")
+    
+    # Relationships
+    cities = relationship("City", back_populates="country", cascade="all, delete-orphan")
 
     def __init__(self, name, code):
         self.name = name
@@ -28,10 +28,11 @@ class City(Base):
     name = Column(String, index=True)
     slug = Column(String, unique=True, index=True)
     tz = Column(String, nullable=True)
-    # Relationships:
-    country_id = Column(Integer, ForeignKey('countries.id'))
-    country = relationship("Country", back_populates="cities", cascade="all,delete")
-    locations = relationship("Location", back_populates="city")
+    
+    # Relationships
+    country_id = Column(Integer, ForeignKey('countries.id', ondelete="CASCADE"))
+    country = relationship("Country", back_populates="cities")
+    locations = relationship("Location", back_populates="city", cascade="all, delete-orphan")
 
     lat = Column(Float)
     lon = Column(Float)
@@ -52,13 +53,14 @@ class Location(Base):
     lat = Column(Float)
     lon = Column(Float)
     height = Column(Float)
-    # Relationships:
-    city_id = Column(Integer, ForeignKey('cities.id'))
-    city = relationship("City", back_populates="locations", cascade="all,delete")
-    country_id = Column(Integer, ForeignKey('countries.id'))
-    country = relationship("Country", cascade="all,delete")
-    stations = relationship("Station", back_populates="location")
-    measurements = relationship("Measurement", back_populates="location")
+    
+    # Relationships
+    city_id = Column(Integer, ForeignKey('cities.id', ondelete="CASCADE"))
+    city = relationship("City", back_populates="locations")
+    country_id = Column(Integer, ForeignKey('countries.id', ondelete="CASCADE"))
+    country = relationship("Country")
+    stations = relationship("Station", back_populates="location", cascade="all, delete-orphan")
+    measurements = relationship("Measurement", back_populates="location", cascade="all, delete-orphan")
 
 
 class Station(Base):
@@ -70,12 +72,13 @@ class Station(Base):
     apikey = Column(String)
     last_active = Column(DateTime)
     source = Column(Integer)
-    # Relationships:
-    location_id = Column(Integer, ForeignKey('locations.id'))
-    location = relationship("Location", back_populates="stations", cascade="all,delete")
-    measurements = relationship("Measurement", back_populates="station")
-    hourly_avg = relationship("HourlyDimensionAverages", back_populates="station")
-    stationStatus = relationship("StationStatus", back_populates="station")
+    
+    # Relationships
+    location_id = Column(Integer, ForeignKey('locations.id', ondelete="CASCADE"))
+    location = relationship("Location", back_populates="stations")
+    measurements = relationship("Measurement", back_populates="station", cascade="all, delete-orphan")
+    hourly_avg = relationship("HourlyDimensionAverages", back_populates="station", cascade="all, delete-orphan")
+    stationStatus = relationship("StationStatus", back_populates="station", cascade="all, delete-orphan")
 
 
 class Measurement(Base):
@@ -85,12 +88,13 @@ class Measurement(Base):
     time_received = Column(DateTime)
     time_measured = Column(DateTime)
     sensor_model = Column(Integer)
-    # Relationships:
-    location_id = Column(Integer, ForeignKey('locations.id'))
-    location = relationship("Location", back_populates="measurements", cascade="all,delete")
-    station_id = Column(Integer, ForeignKey('stations.id'))
-    station = relationship("Station", back_populates="measurements", cascade="all,delete")
-    values = relationship("Values", back_populates="measurement")
+    
+    # Relationships
+    location_id = Column(Integer, ForeignKey('locations.id', ondelete="CASCADE"))
+    location = relationship("Location", back_populates="measurements")
+    station_id = Column(Integer, ForeignKey('stations.id', ondelete="CASCADE"))
+    station = relationship("Station", back_populates="measurements")
+    values = relationship("Values", back_populates="measurement", cascade="all, delete-orphan")
 
 
 class Values(Base):
@@ -99,25 +103,27 @@ class Values(Base):
     id = Column(Integer, primary_key=True, index=True)
     dimension = Column(Integer)
     value = Column(Float)
-    # Relationships:
-    measurement_id = Column(Integer, ForeignKey('measurements.id'), )
-    measurement = relationship("Measurement", back_populates="values", cascade="all,delete")
+    
+    # Relationships
+    measurement_id = Column(Integer, ForeignKey('measurements.id', ondelete="CASCADE"))
+    measurement = relationship("Measurement", back_populates="values")
 
 
 class StationStatus(Base):
     __tablename__ = "stationStatus"
 
     id = Column(Integer, primary_key=True, index=True)
-    station_id = Column(Integer, ForeignKey('stations.id'))
-    station = relationship("Station", back_populates="stationStatus", cascade="all,delete")
+    station_id = Column(Integer, ForeignKey('stations.id', ondelete="CASCADE"))
+    station = relationship("Station", back_populates="stationStatus")
     timestamp = Column(DateTime)
     level = Column(Integer)
     message = Column(String)
 
-class HourlyDimensionAverages(Base):
-    __tablename__ = 'hourly_avg'  # This should match your view name in PostgreSQL
 
-    station_id = Column(Integer, ForeignKey('stations.id'), primary_key=True)  # Assuming 'station_id' uniquely identifies the record
+class HourlyDimensionAverages(Base):
+    __tablename__ = 'hourly_avg'
+
+    station_id = Column(Integer, ForeignKey('stations.id', ondelete="CASCADE"), primary_key=True)
     station = relationship("Station", back_populates="hourly_avg")
-    hour = Column(DateTime, primary_key=True)       # Hour as a datetime truncated to hour precision
-    dimension_avg = Column(JSON)                    # JSON column to store {dimension_id: avg_value} dictionary
+    hour = Column(DateTime, primary_key=True)  # Hour as a datetime truncated to hour precision
+    dimension_avg = Column(JSON)  # JSON column to store {dimension_id: avg_value} dictionary
