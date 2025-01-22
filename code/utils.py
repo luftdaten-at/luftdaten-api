@@ -223,3 +223,14 @@ def standard_output_to_json(data):
     ]
 
     return json.dumps(json_data)
+
+
+def float_default(x, default = None):
+    '''
+    trys to convert x to float
+    if not possible returns default
+    '''
+    try:
+        return float(x)
+    except:
+        return default

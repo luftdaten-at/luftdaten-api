@@ -60,8 +60,8 @@ app.add_middleware(
 scheduler = BackgroundScheduler()
 
 # Planen Sie die Aufgabe alle 5 Minuten
-#import_sensor_community_data()
-scheduler.add_job(import_sensor_community_data, 'interval', minutes=0.1)
+import_sensor_community_data()
+scheduler.add_job(import_sensor_community_data, 'interval', minutes=5)
 
 # Scheduler starten
 scheduler.start()

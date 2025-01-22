@@ -3,37 +3,90 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 from models import Station, Measurement, Values, Location
 from datetime import datetime
-from utils import get_or_create_location
+from utils import get_or_create_location, float_default
 from enums import Dimension, SensorModel
 
 
-def sensorcommunity_import_grouped_by_location(db: Session, data: dict, source: int):
+def sensor_community_import_grouped_by_location(db: Session, data: dict, source: int):
     for row in data:
-        # find station base on location
+        lat = float_default(row['location']['latitude'])
+        lon = float_default(row['location']['longitude'])
+        height = float_default(row['location']['altitude'])
+
+        # find location
         loc = db.query(Location).filter(
-            Location.lon == row['location']['longitude'],
-            Location.lat == row['location']['latitude']
+            Location.lat == lat,
+            Location.lon == lon,
+            Location.height == height
         ).first()
 
+        # create if not exists
         if not loc:
             loc = Location(
-                lat=float(row['location']['latitude']),
-                lon=float(row['location']['longitude']),
-                height=float(row['location']['altitude'])
+                lat = lat,
+                lon = lon,
+                height = height,
             )
             db.add(loc)
             db.commit()
             db.refresh(loc)
         
+        # find station base on location
         station = db.query(Station).filter(
             Station.location == loc
         ).first()
 
+        # create if not exists
         if not station:
             # creaet station
-            pass
+            station = Station(
+                # take sensor id as device name
+                device = row['sensor']['id'],
+                firmware = None,
+                apikey = None,
+                location_id = loc.id,
+                last_active = row['timestamp'],
+                source = source
+            )
+            db.add(station)
+            db.commit()
+            db.refresh(station)
 
-        print(loc)
+        sensor_model = {v:k for k,v in SensorModel._names.items()}.get(row["sensor"]["sensor_type"]["name"], None)
+
+        # add measurements
+        measurement = db.query(Measurement).filter(
+            Measurement.station_id == station.id,
+            Measurement.time_measured == station.last_active,
+            Measurement.sensor_model == sensor_model
+        ).first()
+
+
+        if not measurement:
+            measurement = Measurement(
+                sensor_model = sensor_model,
+                station_id = station.id,
+                time_measured = station.last_active,
+                time_received = datetime.utcnow(),
+                location_id = loc.id
+            )
+            db.add(measurement)
+            db.commit()
+            db.refresh(measurement)
+
+            # only add values if the measurement is not yet present
+            for val in row['sensordatavalues']:
+                if not float_default(val['value']):
+                    continue
+                value = Values(
+                    dimension = Dimension.get_dimension_from_sensor_community_name_import(val['value_type']),
+                    value = float_default(val['value']),
+                    measurement_id = measurement.id
+                )
+                db.add(value)
+            db.commit()
+
+    logging.info(f"Finished import task")
 
 def process_and_import_data(db: Session, data, source):
     for entry_index, entry in enumerate(data):

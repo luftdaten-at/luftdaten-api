@@ -1,7 +1,7 @@
 import logging
 import requests
 from database import get_db
-from services.data_service import process_and_import_data, sensorcommunity_import_grouped_by_location
+from services.data_service import process_and_import_data, sensor_community_import_grouped_by_location
 from enums import Source
 
 # Logging-Konfiguration
@@ -38,7 +38,7 @@ def import_sensor_community_data():
             return
 
         try:
-            sensorcommunity_import_grouped_by_location(db, data, source=Source.SC)  # Verarbeite und speichere die Daten
+            sensor_community_import_grouped_by_location(db, data, source=Source.SC)  # Verarbeite und speichere die Daten
             logger.info("Data processed and imported successfully.")
         except Exception as e:
             logger.error(f"Error processing and importing data: {e}")
