@@ -9,6 +9,10 @@ from enums import Dimension, SensorModel
 
 def sensor_community_import_grouped_by_location(db: Session, data: dict, source: int):
     for row in data:
+        # skip if not in austria
+        if row['location']['country'] != 'AT':
+            continue
+
         lat = float_default(row['location']['latitude'])
         lon = float_default(row['location']['longitude'])
         height = float_default(row['location']['altitude'])
@@ -22,14 +26,7 @@ def sensor_community_import_grouped_by_location(db: Session, data: dict, source:
 
         # create if not exists
         if not loc:
-            loc = Location(
-                lat = lat,
-                lon = lon,
-                height = height,
-            )
-            db.add(loc)
-            db.commit()
-            db.refresh(loc)
+            loc = get_or_create_location(db, lat, lon, height)
         
         # find station base on location
         station = db.query(Station).filter(
