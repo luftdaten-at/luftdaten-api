@@ -2,7 +2,7 @@ import logging  # Importieren des Logging-Moduls
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 from models import Station, Measurement, Values, Location
-from datetime import datetime
+from datetime import datetime, timezone
 from utils import get_or_create_location, float_default
 from enums import Dimension, SensorModel
 
@@ -28,7 +28,7 @@ def sensor_community_import_grouped_by_location(db: Session, data: dict, source:
         if not loc:
             loc = get_or_create_location(db, lat, lon, height)
         
-        # find station base on location
+        # find station based on location
         station = db.query(Station).filter(
             Station.location == loc
         ).first()
@@ -64,7 +64,7 @@ def sensor_community_import_grouped_by_location(db: Session, data: dict, source:
                 sensor_model = sensor_model,
                 station_id = station.id,
                 time_measured = station.last_active,
-                time_received = datetime.utcnow(),
+                time_received = datetime.now(tz=timezone.utc),
                 location_id = loc.id
             )
             db.add(measurement)
