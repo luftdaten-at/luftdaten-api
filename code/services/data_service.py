@@ -45,9 +45,13 @@ def sensor_community_import_grouped_by_location(db: Session, data: dict, source:
                 last_active = row['timestamp'],
                 source = source
             )
-            db.add(station)
-            db.commit()
-            db.refresh(station)
+
+        # update last_active
+        station.last_active = row['timestamp']
+
+        db.add(station)
+        db.commit()
+        db.refresh(station)
 
         sensor_model = {v:k for k,v in SensorModel._names.items()}.get(row["sensor"]["sensor_type"]["name"], None)
 
