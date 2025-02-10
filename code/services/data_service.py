@@ -77,11 +77,13 @@ def sensor_community_import_grouped_by_location(db: Session, data: dict, source:
 
             # only add values if the measurement is not yet present
             for val in row['sensordatavalues']:
-                if not float_default(val['value']):
+                d = Dimension.get_dimension_from_sensor_community_name_import(val['value_type'])
+                v = float_default(val['value'])
+                if d is None or v is None:
                     continue
                 value = Values(
-                    dimension = Dimension.get_dimension_from_sensor_community_name_import(val['value_type']),
-                    value = float_default(val['value']),
+                    dimension = d,
+                    value = v,
                     measurement_id = measurement.id
                 )
                 db.add(value)
