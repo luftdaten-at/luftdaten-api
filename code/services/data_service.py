@@ -2,13 +2,17 @@ import logging  # Importieren des Logging-Moduls
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 from models import Station, Measurement, Values, Location
-from datetime import datetime
+from datetime import datetime, timezone
 from utils import get_or_create_location, float_default
 from enums import Dimension, SensorModel
 
 
 def sensor_community_import_grouped_by_location(db: Session, data: dict, source: int):
     for row in data:
+        # skip if not in austria
+        if row['location']['country'] != 'AT':
+            continue
+
         lat = float_default(row['location']['latitude'])
         lon = float_default(row['location']['longitude'])
         height = float_default(row['location']['altitude'])
@@ -22,16 +26,9 @@ def sensor_community_import_grouped_by_location(db: Session, data: dict, source:
 
         # create if not exists
         if not loc:
-            loc = Location(
-                lat = lat,
-                lon = lon,
-                height = height,
-            )
-            db.add(loc)
-            db.commit()
-            db.refresh(loc)
+            loc = get_or_create_location(db, lat, lon, height)
         
-        # find station base on location
+        # find station based on location
         station = db.query(Station).filter(
             Station.location == loc
         ).first()
@@ -48,9 +45,13 @@ def sensor_community_import_grouped_by_location(db: Session, data: dict, source:
                 last_active = row['timestamp'],
                 source = source
             )
-            db.add(station)
-            db.commit()
-            db.refresh(station)
+
+        # update last_active
+        station.last_active = row['timestamp']
+
+        db.add(station)
+        db.commit()
+        db.refresh(station)
 
         sensor_model = {v:k for k,v in SensorModel._names.items()}.get(row["sensor"]["sensor_type"]["name"], None)
 
@@ -67,7 +68,7 @@ def sensor_community_import_grouped_by_location(db: Session, data: dict, source:
                 sensor_model = sensor_model,
                 station_id = station.id,
                 time_measured = station.last_active,
-                time_received = datetime.utcnow(),
+                time_received = datetime.now(tz=timezone.utc),
                 location_id = loc.id
             )
             db.add(measurement)
@@ -76,11 +77,13 @@ def sensor_community_import_grouped_by_location(db: Session, data: dict, source:
 
             # only add values if the measurement is not yet present
             for val in row['sensordatavalues']:
-                if not float_default(val['value']):
+                d = Dimension.get_dimension_from_sensor_community_name_import(val['value_type'])
+                v = float_default(val['value'])
+                if d is None or v is None:
                     continue
                 value = Values(
-                    dimension = Dimension.get_dimension_from_sensor_community_name_import(val['value_type']),
-                    value = float_default(val['value']),
+                    dimension = d,
+                    value = v,
                     measurement_id = measurement.id
                 )
                 db.add(value)

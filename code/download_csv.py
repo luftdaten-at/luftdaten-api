@@ -121,6 +121,8 @@ def main():
 
     # files that have already been downloaded
     cur_files = set(os.listdir(DOWNLOAD_FOLDER))
+
+    # filter for location rather then device_id
     db = next(get_db())
     stations = set(str(s.device) for s in db.query(Station).all())
 
