@@ -27,14 +27,16 @@ async def get_current_station_data_all(db: Session = Depends(get_db)):
     Returns the active stations with lat, lon, PM1, PM10 and PM2.5.
     """
 
+    PM2_5_LOWER_BOUND, PM2_5_UPPER_BOUND = Dimension.get_filter_threshold(Dimension.PM2_5)
+
     q = (
         db.query(
             Station.device,
             Location.lat,
             Location.lon,
-            func.avg(case((Values.dimension == 2, Values.value))).label("PM1"),
-            func.avg(case((Values.dimension == 3, Values.value))).label("PM2_5"),
-            func.avg(case((Values.dimension == 5, Values.value))).label("PM10"),
+            func.avg(case((Values.dimension == Dimension.PM1_0, Values.value))).label("PM1"),
+            func.avg(case((Values.dimension == Dimension.PM2_5, Values.value))).label("PM2_5"),
+            func.avg(case((Values.dimension == Dimension.PM10_0, Values.value))).label("PM10"),
         )
         .join(Measurement, Measurement.station_id == Station.id)
         .join(Location, Location.id == Measurement.location_id)
@@ -48,9 +50,8 @@ async def get_current_station_data_all(db: Session = Depends(get_db)):
             Location.lat,
             Location.lon
         )
-        #.having(func.avg(case((Values.dimension == 2, Values.value))).isnot(None))
-        #.having(func.avg(case((Values.dimension == 3, Values.value))).isnot(None))
-        #.having(func.avg(case((Values.dimension == 5, Values.value))).isnot(None))
+        .having(func.avg(case((Values.dimension == Dimension.PM2_5, Values.value))) > PM2_5_LOWER_BOUND)
+        .having(func.avg(case((Values.dimension == Dimension.PM2_5, Values.value))) < PM2_5_UPPER_BOUND)
         .order_by(Measurement.time_measured)
     )
 
@@ -290,8 +291,9 @@ async def get_topn_stations_by_dim(
     output_format: OutputFormat = Query(OutputFormat.CSV, description="Ouput format"),
     db: Session = Depends(get_db)
 ):
-    LOWER_BOUND = 0
-    UPPER_BOUND = 999
+
+    LOWER_BOUND, UPPER_BOUND = Dimension.get_filter_threshold(dimension)
+
     compare = Values.value
     if order == Order.MAX:
         compare = Values.value.desc()
