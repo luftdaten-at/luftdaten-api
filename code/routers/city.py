@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.orm import Session
 from database import get_db
 from sqlalchemy import func, desc
-from datetime import datetime
+from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
 from models import City, Country, Station, Measurement, Values, Location
@@ -54,7 +54,10 @@ async def get_average_measurements_by_city(
         db_city.lat = lat
         db_city.lon = lon
         db.commit()
+    
 
+    # only select the measurements from the last hour
+    now = datetime.now(timezone.utc)
     q = (
         db.query(
             Values.dimension,
@@ -78,7 +81,7 @@ async def get_average_measurements_by_city(
             "city_slug": db_city.slug,
             "country": db_city.country.name,
             "timezone": db_city.tz,
-            "time": datetime.now(ZoneInfo('UTC')).replace(second=0, microsecond=0).isoformat(),
+            "time": datetime.now(timezone.utc).replace(second=0, microsecond=0).isoformat(),
             #"height": db_location.height,
             "values":[{"dimension": dim, "value": val} for dim, val in q.all()] 
         }

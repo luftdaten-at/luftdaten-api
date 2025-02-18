@@ -158,7 +158,7 @@ def import_station_data(db: Session, station_data, sensors):
     logging.debug(f"Sensordaten: {sensors}")
 
     # Empfangszeit des Requests erfassen
-    time_received = datetime.now()
+    time_received = datetime.now(timezone.utc)
     logging.debug(f"Zeit des Empfangs: {time_received}")
 
     # Prüfen, ob die Station bereits existiert
