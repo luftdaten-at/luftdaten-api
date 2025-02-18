@@ -94,6 +94,14 @@ class Dimension():
         NO2: "no2_ppb",
     }
 
+    _filter_thresholds = {
+        PM2_5: (0, 999)
+    }
+
+    @classmethod
+    def get_filter_threshold(cls, dim: int) -> tuple[float, float]:
+        return cls._filter_thresholds.get(dim, (-float('inf'), float('inf')))
+
     @classmethod
     def get_unit(cls, dimension_id: int) -> str:
         """
