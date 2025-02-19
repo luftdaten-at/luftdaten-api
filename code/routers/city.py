@@ -3,7 +3,7 @@ from geopy.geocoders import Nominatim
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.orm import Session
 from database import get_db
-from sqlalchemy import func, desc
+from sqlalchemy import func, or_, distinct, and_
 from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
 
@@ -60,7 +60,7 @@ async def get_average_measurements_by_city(
     now = datetime.now(timezone.utc)
     start = now - timedelta(hours=1)
 
-    from sqlalchemy import distinct
+    LOWER, UPPER = Dimension.get_filter_threshold(Dimension.PM2_5)
 
     q = (
         db.query(
@@ -77,8 +77,12 @@ async def get_average_measurements_by_city(
         .filter(City.slug == city_slug)
         .filter(Values.value != 'nan')
         .filter(Measurement.time_measured >= start)
+        # filter outlier
+        .filter(or_(Values.dimension != Dimension.PM2_5, and_(LOWER <= Values.value, Values.value <= UPPER)))
         .group_by(Values.dimension)
     )
+
+    print(len(q.all()))
 
     station_count = db.query(Station).join(Location).join(City).filter(City.slug == city_slug).count()
 
