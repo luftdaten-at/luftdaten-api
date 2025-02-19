@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.orm import Session
 from database import get_db
 from sqlalchemy import func, desc
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
 
 from models import City, Country, Station, Measurement, Values, Location
@@ -58,18 +58,30 @@ async def get_average_measurements_by_city(
 
     # only select the measurements from the last hour
     now = datetime.now(timezone.utc)
+    start = now - timedelta(hours=1)
+
+    from sqlalchemy import distinct
+
     q = (
         db.query(
             Values.dimension,
-            func.avg(Values.value) 
+            func.avg(Values.value),
+            func.count(Values.id), 
+            func.count(distinct(Station.id)),
         )
+        .select_from(Values)
         .join(Measurement)
         .join(Location)
         .join(City)
+        .join(Station, Station.id == Measurement.station_id)
         .filter(City.slug == city_slug)
         .filter(Values.value != 'nan')
+        .filter(Measurement.time_measured >= start)
         .group_by(Values.dimension)
     )
+
+    station_count = db.query(Station).join(Location).join(City).filter(City.slug == city_slug).count()
+
     j = {
         "type": "Feature",
         "geometry": {
@@ -81,9 +93,14 @@ async def get_average_measurements_by_city(
             "city_slug": db_city.slug,
             "country": db_city.country.name,
             "timezone": db_city.tz,
-            "time": datetime.now(timezone.utc).replace(second=0, microsecond=0).isoformat(),
-            #"height": db_location.height,
-            "values":[{"dimension": dim, "value": val} for dim, val in q.all()] 
+            "time": datetime.now(ZoneInfo(db_city.tz)).replace(second=0, microsecond=0).isoformat(),
+            "station_count": station_count,
+            "values":[{
+                "dimension": dim, 
+                "value": val,
+                "value_count": val_count,
+                "station_count": s_cnt
+            } for dim, val, val_count, s_cnt in q.all()],
         }
     }
 

@@ -18,15 +18,7 @@ def sensor_community_import_grouped_by_location(db: Session, data: dict, source:
         height = float_default(row['location']['altitude'])
 
         # find location
-        loc = db.query(Location).filter(
-            Location.lat == lat,
-            Location.lon == lon,
-            Location.height == height
-        ).first()
-
-        # create if not exists
-        if not loc:
-            loc = get_or_create_location(db, lat, lon, height)
+        loc = get_or_create_location(db, lat, lon, height)
         
         # find station based on location
         station = db.query(Station).filter(
