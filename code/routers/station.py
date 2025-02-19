@@ -1,7 +1,7 @@
 from fastapi import APIRouter, BackgroundTasks, Depends, Response, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func, or_, text, case
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 from database import get_db
 import csv
@@ -238,7 +238,7 @@ async def create_station_data(
     )
 
     # Empfangszeit des Requests erfassen
-    time_received = datetime.now() 
+    time_received = datetime.now(timezone.utc)
 
     # Durch alle Sensoren iterieren
     for sensor_id, sensor_data in sensors.root.items():
