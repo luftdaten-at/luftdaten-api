@@ -25,6 +25,8 @@ def sensor_community_import_grouped_by_location(db: Session, data: dict, source:
             Station.location == loc
         ).first()
 
+        timestamp = datetime.strptime(row['timestamp'], "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+
         # create if not exists
         if not station:
             # creaet station
@@ -34,12 +36,12 @@ def sensor_community_import_grouped_by_location(db: Session, data: dict, source:
                 firmware = None,
                 apikey = None,
                 location_id = loc.id,
-                last_active = row['timestamp'],
+                last_active = timestamp,
                 source = source
             )
 
         # update last_active
-        station.last_active = row['timestamp']
+        station.last_active = timestamp
 
         db.add(station)
         db.commit()

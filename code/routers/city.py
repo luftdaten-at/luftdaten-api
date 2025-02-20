@@ -61,8 +61,6 @@ async def get_average_measurements_by_city(
     now = datetime.now(timezone.utc)
     start = now - timedelta(hours=1)
 
-    LOWER, UPPER = Dimension.get_filter_threshold(Dimension.PM2_5)
-
     q = (
         db.query(
             Values.dimension,
@@ -78,8 +76,6 @@ async def get_average_measurements_by_city(
         .filter(City.slug == city_slug)
         .filter(Values.value != 'nan')
         .filter(Measurement.time_measured >= start)
-        # filter outlier
-        #.filter(or_(Values.dimension != Dimension.PM2_5, and_(LOWER <= Values.value, Values.value <= UPPER)))
         .group_by(Values.dimension)
     )
 
