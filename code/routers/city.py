@@ -91,12 +91,9 @@ async def get_average_measurements_by_city(
     data = []
     for dim, val_list, val_count, s_cnt in q.all():
         a = np.array(val_list)
-        q1 = np.percentile(a, 25)
-        q3 = np.percentile(a, 75)
-        iqr = (q3 - q1)
 
-        l = q1 - iqr * Dimension.IQR_FACTOR
-        r = q3 + iqr * Dimension.IQR_FACTOR
+        l = np.percentile(a, 100 * (Dimension.ALPHA / 2))
+        r = np.percentile(a, 100 * (1 - (Dimension.ALPHA / 2)))
 
         b = a[(a >= l) & (a <= r)]
 

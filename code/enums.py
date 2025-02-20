@@ -95,7 +95,7 @@ class Dimension():
     }
 
     # outlider factor
-    IQR_FACTOR = 3
+    ALPHA = 0.1
 
     _filter_thresholds = {
         PM2_5: (0, 999)
