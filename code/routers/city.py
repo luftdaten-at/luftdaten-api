@@ -1,4 +1,5 @@
 import json
+import numpy as np
 from geopy.geocoders import Nominatim
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.orm import Session
@@ -65,7 +66,7 @@ async def get_average_measurements_by_city(
     q = (
         db.query(
             Values.dimension,
-            func.avg(Values.value),
+            func.array_agg(Values.value),
             func.count(Values.id), 
             func.count(distinct(Station.id)),
         )
@@ -78,13 +79,28 @@ async def get_average_measurements_by_city(
         .filter(Values.value != 'nan')
         .filter(Measurement.time_measured >= start)
         # filter outlier
-        .filter(or_(Values.dimension != Dimension.PM2_5, and_(LOWER <= Values.value, Values.value <= UPPER)))
+        #.filter(or_(Values.dimension != Dimension.PM2_5, and_(LOWER <= Values.value, Values.value <= UPPER)))
         .group_by(Values.dimension)
     )
 
     print(len(q.all()))
 
     station_count = db.query(Station).join(Location).join(City).filter(City.slug == city_slug).count()
+
+    # filter outlier with Quartiles
+    data = []
+    for dim, val_list, val_count, s_cnt in q.all():
+        a = np.array(val_list)
+        q1 = np.percentile(a, 25)
+        q3 = np.percentile(a, 75)
+        iqr = (q3 - q1)
+
+        l = q1 - iqr * Dimension.IQR_FACTOR
+        r = q3 + iqr * Dimension.IQR_FACTOR
+
+        b = a[(a >= l) & (a <= r)]
+
+        data.append((dim, np.mean(b), val_count, s_cnt))
 
     j = {
         "type": "Feature",
@@ -104,7 +120,7 @@ async def get_average_measurements_by_city(
                 "value": val,
                 "value_count": val_count,
                 "station_count": s_cnt
-            } for dim, val, val_count, s_cnt in q.all()],
+            } for dim, val, val_count, s_cnt in data],
         }
     }
 

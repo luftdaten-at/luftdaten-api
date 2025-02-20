@@ -94,6 +94,9 @@ class Dimension():
         NO2: "no2_ppb",
     }
 
+    # outlider factor
+    IQR_FACTOR = 3
+
     _filter_thresholds = {
         PM2_5: (0, 999)
     }
