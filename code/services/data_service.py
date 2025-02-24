@@ -29,10 +29,10 @@ def sensor_community_import_grouped_by_location(db: Session, data: dict, source:
 
         # create if not exists
         if not station:
-            # creaet station
+            # create station
             station = Station(
                 # take sensor id as device name
-                device = row['sensor']['id'],
+                device = f'{loc.id}_location_id',
                 firmware = None,
                 apikey = None,
                 location_id = loc.id,
