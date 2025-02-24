@@ -32,7 +32,7 @@ def sensor_community_import_grouped_by_location(db: Session, data: dict, source:
             # create station
             station = Station(
                 # take sensor id as device name
-                device = f'{loc.id}_location_id',
+                device = f'{loc.id}SC',
                 firmware = None,
                 apikey = None,
                 location_id = loc.id,
