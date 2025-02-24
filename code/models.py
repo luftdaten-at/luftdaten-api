@@ -59,6 +59,7 @@ class Location(Base):
     country = relationship("Country")
     stations = relationship("Station", back_populates="location")
     measurements = relationship("Measurement", back_populates="location")
+    calibration_measurements = relationship("CalibrationMeasurement", back_populates="location")
 
 
 class Station(Base):
@@ -74,6 +75,7 @@ class Station(Base):
     location_id = Column(Integer, ForeignKey('locations.id'))
     location = relationship("Location", back_populates="stations")
     measurements = relationship("Measurement", back_populates="station")
+    calibration_measurements = relationship("CalibrationMeasurement", back_populates="station")
     hourly_avg = relationship("HourlyDimensionAverages", back_populates="station")
     stationStatus = relationship("StationStatus", back_populates="station")
 
@@ -93,6 +95,21 @@ class Measurement(Base):
     values = relationship("Values", back_populates="measurement")
 
 
+class CalibrationMeasurement(Base):
+    __tablename__ = "calibration_measurements"
+
+    id = Column(Integer, primary_key=True, index=True)
+    time_received = Column(DateTime)
+    time_measured = Column(DateTime)
+    sensor_model = Column(Integer)
+    # Relationships:
+    location_id = Column(Integer, ForeignKey('locations.id'))
+    location = relationship("Location", back_populates="calibration_measurements")
+    station_id = Column(Integer, ForeignKey('stations.id'))
+    station = relationship("Station", back_populates="calibration_measurements")
+    values = relationship("Values", back_populates="calibration_measurement")
+
+
 class Values(Base):
     __tablename__ = "values"
 
@@ -102,6 +119,9 @@ class Values(Base):
     # Relationships:
     measurement_id = Column(Integer, ForeignKey('measurements.id'))
     measurement = relationship("Measurement", back_populates="values")
+
+    calibration_measurement_id = Column(Integer, ForeignKey('calibration_measurements.id'))
+    calibration_measurement = relationship("CalibrationMeasurement", back_populates="values")
 
 
 class StationStatus(Base):
