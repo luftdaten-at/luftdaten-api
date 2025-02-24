@@ -11,7 +11,7 @@ from functools import wraps
 from enum import Enum
 from itertools import groupby
 
-from models import Station, Location, Measurement, Values, StationStatus, HourlyDimensionAverages, City
+from models import Station, Location, Measurement, CalibrationMeasurement, Values, StationStatus, HourlyDimensionAverages, City
 from schemas import StationDataCreate, SensorsCreate, StationStatusCreate
 from utils import get_or_create_location, download_csv, get_or_create_station, standard_output_to_csv, standard_output_to_json
 from enums import Precision, OutputFormat, Order, Dimension
@@ -232,7 +232,10 @@ async def create_station_data(
     db: Session = Depends(get_db)
 ):
 
-    print(station)
+    MeasurementClass = Measurement
+
+    if station.calibration_mode:
+        MeasurementClass = CalibrationMeasurement
 
     db_station = get_or_create_station(
         db = db,
@@ -245,10 +248,10 @@ async def create_station_data(
     # Durch alle Sensoren iterieren
     for sensor_id, sensor_data in sensors.root.items():
         # Prüfen, ob bereits eine Messung mit dem gleichen time_measured und sensor_model existiert
-        existing_measurement = db.query(Measurement).filter(
-            Measurement.station_id == db_station.id,
-            Measurement.time_measured == station.time,
-            Measurement.sensor_model == sensor_data.type
+        existing_measurement = db.query(MeasurementClass).filter(
+            MeasurementClass.station_id == db_station.id,
+            MeasurementClass.time_measured == station.time,
+            MeasurementClass.sensor_model == sensor_data.type
         ).first()
 
         if existing_measurement:
@@ -258,7 +261,7 @@ async def create_station_data(
             )
 
         # Wenn keine bestehende Messung gefunden wurde, füge eine neue hinzu
-        db_measurement = Measurement(
+        db_measurement = MeasurementClass(
             sensor_model=sensor_data.type,
             station_id=db_station.id,
             time_measured=station.time,
@@ -271,11 +274,20 @@ async def create_station_data(
 
         # Werte (dimension, value) für die Messung hinzufügen
         for dimension, value in sensor_data.data.items():
-            db_value = Values(
-                dimension=dimension,
-                value=value,
-                measurement_id=db_measurement.id
-            )
+            db_value = None 
+            if station.calibration_mode:
+                db_value = Values(
+                    dimension=dimension,
+                    value=value,
+                    calibration_measurement_id=db_measurement.id
+                )
+            else:
+                db_value = Values(
+                    dimension=dimension,
+                    value=value,
+                    measurement_id=db_measurement.id
+                )
+
             db.add(db_value)
         
     db_station.last_active = station.time
