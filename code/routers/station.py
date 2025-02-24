@@ -232,6 +232,8 @@ async def create_station_data(
     db: Session = Depends(get_db)
 ):
 
+    print(station)
+
     db_station = get_or_create_station(
         db = db,
         station = station
