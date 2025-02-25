@@ -22,7 +22,9 @@ router = APIRouter()
 
 # Old endpoints for compatability reason
 @router.get("/current/all", response_class=Response)
-async def get_current_station_data_all(db: Session = Depends(get_db)):
+async def get_current_station_data_all(
+    db: Session = Depends(get_db),
+):
     """
     Returns the active stations with lat, lon, PM1, PM10 and PM2.5.
     """
@@ -123,6 +125,7 @@ async def get_current_station_data(
     station_ids: str = None,
     last_active: int = 3600,
     output_format: str = "geojson",
+    calibration_data: bool = Query(False, description="if true also calibration data is sent"),
     db: Session = Depends(get_db)
 ):
     """
@@ -156,6 +159,18 @@ async def get_current_station_data(
                     "values": [{"dimension": value.dimension, "value": value.value} for value in values]
                 })
 
+            calibration_sensors = []
+            if calibration_data:
+                for calibration_measurement in db.query(CalibrationMeasurement).filter(
+                    CalibrationMeasurement.station_id == station.id,
+                    CalibrationMeasurement.time_measured == station.last_active
+                ):
+                    calibration_values = db.query(Values).filter(Values.calibration_measurement_id == calibration_measurement.id).all()
+                    calibration_sensors.append({
+                        "sensor_model": calibration_measurement.sensor_model,
+                        "values": [{"dimension": value.dimension, "value": value.value} for value in calibration_values]
+                    })
+
             features.append({
                 "type": "Feature",
                 "geometry": {
@@ -170,6 +185,9 @@ async def get_current_station_data(
                 }
             })
 
+            if calibration_data and calibration_sensors:
+                features[-1]["properties"]["calibration_sensors"] = calibration_sensors
+
         content = {
             "type": "FeatureCollection",
             "features": features,
@@ -178,7 +196,11 @@ async def get_current_station_data(
         media_type = "application/geo+json"
 
     elif output_format == "csv":
-        csv_data = "device,lat,lon,last_active,height,sensor_model,dimension,value\n"
+        csv_data = "device,lat,lon,last_active,height,sensor_model,dimension,value"
+        if calibration_data:
+            csv_data += ",calibration"
+        csv_data += "\n"
+
         for station in stations:
             measurements = db.query(Measurement).filter(
                 Measurement.station_id == station.id,
@@ -189,7 +211,19 @@ async def get_current_station_data(
                 values = db.query(Values).filter(Values.measurement_id == measurement.id).all()
 
                 for value in values:
-                    csv_data += f"{station.device},{station.lat},{station.lon},{station.last_active},{station.height},{measurement.sensor_model},{value.dimension},{value.value}\n"
+                    csv_data += f"{station.device},{station.location.lat},{station.location.lon},{station.last_active},{station.location.height},{measurement.sensor_model},{value.dimension},{value.value}"
+                    if calibration_data:
+                        csv_data += f',{False}'
+                    csv_data += "\n"
+            
+            if calibration_data:
+                for calibration_measurement in db.query(CalibrationMeasurement).filter(
+                    CalibrationMeasurement.station_id == station.id,
+                    CalibrationMeasurement.time_measured == station.last_active
+                ):
+                    calibration_values = db.query(Values).filter(Values.calibration_measurement_id == calibration_measurement.id).all()
+                    for value in calibration_values:
+                        csv_data += f"{station.device},{station.location.lat},{station.location.lon},{station.last_active},{station.location.height},{measurement.sensor_model},{value.dimension},{value.value},{True}\n"
 
         content = csv_data
         media_type = "text/csv"
