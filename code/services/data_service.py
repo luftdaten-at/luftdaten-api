@@ -41,7 +41,7 @@ def sensor_community_import_grouped_by_location(db: Session, data: dict, source:
             )
 
         # update last_active
-        station.last_active = timestamp
+        station.last_active = max(station.last_active.replace(tzinfo=timezone.utc), timestamp)
 
         db.add(station)
         db.commit()

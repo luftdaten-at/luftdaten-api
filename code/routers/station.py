@@ -331,17 +331,18 @@ async def get_topn_stations_by_dim(
     if output_format == 'csv':
         return Response(content=standard_output_to_csv(q.all()), media_type="text/csv")
     elif output_format == 'json':
-        return Response(content=standard_output_to_json(q.all()), media_type="application/json")
+        return Response(content=standard_output_to_json(q.all(), db), media_type="application/json")
 
 
 @router.get("/historical", response_class=Response, tags=["station"])
 async def get_historical_station_data(
     station_ids: str = Query(..., description="Comma-separated list of station devices"),
     start: str = Query(None, description="Supply in ISO format: YYYY-MM-DDThh:mm+xx:xx. Time is optional."),
-    end: str = Query(None, description="Supply in ISO format: YYYY-MM-DDThh:mm+xx:xx. Time is optional."),
+    end: str = Query(None, description="Supply in ISO format: YYYY-MM-DDThh:mm+xx:xx. Time is optional. If end == 'current' only last measurement is taken."),
     precision: Precision = Query(Precision.MAX, description="Precision of data points"),
     city_slugs: str = Query(None, description="Comma-seperated list of city_slugs"),
     output_format: OutputFormat = Query(OutputFormat.CSV, description="Ouput format"),
+    include_location: bool = Query(False, description="If True location of stations is included."),
     db: Session = Depends(get_db)
 ):
     # Konvertiere die Liste von station_devices in eine Liste
@@ -351,9 +352,10 @@ async def get_historical_station_data(
     # Konvertiere start und end in datetime-Objekte
     try:
         start_date = datetime.fromisoformat(start) if start else None
-        end_date = datetime.fromisoformat(end) if end else None 
+        end_date = datetime.fromisoformat(end) if end else None
     except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DDThh:mm")
+        if end != 'current':
+            raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DDThh:mm")
 
     time_fram = Precision.get_time_frame(precision)
     truncated_time = func.date_trunc(time_fram, Measurement.time_measured).label('time')
@@ -375,15 +377,18 @@ async def get_historical_station_data(
         .order_by(Measurement.station_id, Station.device, truncated_time, Values.dimension)
     )
 
-    if start_date is not None:
-        q = q.filter(truncated_time >= start_date)
-    if end_date is not None:
-        q = q.filter(truncated_time <= end_date)
+    if end == "current":
+        q = q.filter(truncated_time >= Station.last_active)
+    else:
+        if start_date is not None:
+            q = q.filter(truncated_time >= start_date)
+        if end_date is not None:
+            q = q.filter(truncated_time <= end_date)
 
     if output_format == 'csv':
         return Response(content=standard_output_to_csv(q.all()), media_type="text/csv")
     elif output_format == 'json':
-        return Response(content=standard_output_to_json(q.all()), media_type="application/json")
+        return Response(content=standard_output_to_json(q.all(), db, include_location=include_location), media_type="application/json")
 
 
 @router.get("/all", response_class=Response, tags=["station"])

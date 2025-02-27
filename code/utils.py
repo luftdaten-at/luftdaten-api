@@ -184,7 +184,7 @@ def standard_output_to_csv(data) -> str:
         csv_data += f"{device},{time.strftime("%Y-%m-%dT%H:%M")},{dim},{val}\n"
     return csv_data
 
-def standard_output_to_json(data):
+def standard_output_to_json(data, db, include_location = False):
     """
     data: list[(
                 Station.device,
@@ -221,6 +221,16 @@ def standard_output_to_json(data):
         }
         for ((device, time), data) in groups
     ]
+
+    if include_location:
+        for data_point in json_data:
+            db_station = db.query(Station).filter(Station.device == data_point["device"]).first()
+            db_location = db.query(Location).filter(Location.id == db_station.location.id).first()
+            data_point["location"] = {
+                "lat": db_location.lat,
+                "lon": db_location.lon,
+                "height": db_location.height
+            }
 
     return json.dumps(json_data)
 
