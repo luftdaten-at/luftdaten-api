@@ -370,7 +370,7 @@ async def get_topn_stations_by_dim(
 
 @router.get("/historical", response_class=Response, tags=["station"])
 async def get_historical_station_data(
-    station_ids: str = Query(..., description="Comma-separated list of station devices"),
+    station_ids: str = Query("", description="Comma-separated list of station devices"),
     start: str = Query(None, description="Supply in ISO format: YYYY-MM-DDThh:mm+xx:xx. Time is optional."),
     end: str = Query(None, description="Supply in ISO format: YYYY-MM-DDThh:mm+xx:xx. Time is optional. If end == 'current' only last measurement is taken."),
     precision: Precision = Query(Precision.MAX, description="Precision of data points"),
