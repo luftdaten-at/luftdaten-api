@@ -1,6 +1,8 @@
 from enum import Enum
 
 
+CURRENT_TIME_RANGE_MINUTES = 10 # in minutes, indicates how long a measurement is considered for current data
+
 class Dimension():
     PM0_1 = 1
     PM1_0 = 2

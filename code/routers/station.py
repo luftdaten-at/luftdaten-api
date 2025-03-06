@@ -14,7 +14,7 @@ from itertools import groupby
 from models import Station, Location, Measurement, CalibrationMeasurement, Values, StationStatus, HourlyDimensionAverages, City
 from schemas import StationDataCreate, SensorsCreate, StationStatusCreate
 from utils import get_or_create_location, download_csv, get_or_create_station, standard_output_to_csv, standard_output_to_json
-from enums import Precision, OutputFormat, Order, Dimension
+from enums import Precision, OutputFormat, Order, Dimension, CURRENT_TIME_RANGE_MINUTES
 
 
 router = APIRouter()
@@ -412,7 +412,8 @@ async def get_historical_station_data(
     )
 
     if end == "current":
-        q = q.filter(truncated_time >= Station.last_active)
+        start = datetime.now(tz=timezone.utc) - timedelta(minutes=CURRENT_TIME_RANGE_MINUTES)
+        q = q.filter(truncated_time >= Station.last_active, truncated_time >= start)
     else:
         if start_date is not None:
             q = q.filter(truncated_time >= start_date)
