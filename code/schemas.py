@@ -21,7 +21,7 @@ class StationDataCreate(BaseModel):
     apikey: str
     location: LocationCreate
     source: Optional[int] = 1
-    calibration_mode: bool
+    calibration_mode: Optional[bool] = False
 
 
 class SensorDataCreate(BaseModel):
