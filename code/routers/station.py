@@ -324,7 +324,7 @@ async def create_station_data(
 
             db.add(db_value)
         
-    db_station.last_active = station.time
+    db_station.last_active = max(db_station.last_active, station.time)
 
     db.commit()
 
