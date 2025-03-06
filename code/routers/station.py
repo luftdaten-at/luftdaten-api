@@ -410,20 +410,23 @@ async def get_historical_station_data(
         .group_by(Measurement.station_id, Station.device, truncated_time, Values.dimension)
         .order_by(Measurement.station_id, Station.device, truncated_time, Values.dimension)
     )
-
+    data_list = []
     if end == "current":
         start = datetime.now(tz=timezone.utc) - timedelta(minutes=CURRENT_TIME_RANGE_MINUTES)
-        q = q.filter(truncated_time >= Station.last_active, truncated_time >= start)
+        q = q.filter(truncated_time >= Station.last_active)
+        # set all the values to none if the time exceedes the time range
+        data_list = [(tup[0], tup[1], tup[2], tup[3] if tup[1] >= start else None) for tup in q.all()]
     else:
         if start_date is not None:
             q = q.filter(truncated_time >= start_date)
         if end_date is not None:
             q = q.filter(truncated_time <= end_date)
+        data_list = q.all()
 
     if output_format == 'csv':
-        return Response(content=standard_output_to_csv(q.all()), media_type="text/csv")
+        return Response(content=standard_output_to_csv(data_list), media_type="text/csv")
     elif output_format == 'json':
-        return Response(content=standard_output_to_json(q.all(), db, include_location=include_location), media_type="application/json")
+        return Response(content=standard_output_to_json(data_list, db, include_location=include_location), media_type="application/json")
 
 
 @router.get("/all", response_class=Response, tags=["station"])
