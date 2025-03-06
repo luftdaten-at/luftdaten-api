@@ -415,7 +415,7 @@ async def get_historical_station_data(
         start = datetime.now(tz=timezone.utc) - timedelta(minutes=CURRENT_TIME_RANGE_MINUTES)
         q = q.filter(truncated_time >= Station.last_active)
         # set all the values to none if the time exceedes the time range
-        data_list = [(tup[0], tup[1], tup[2], tup[3] if tup[1] >= start else None) for tup in q.all()]
+        data_list = [(tup[0], tup[1], tup[2], tup[3] if tup[1].replace(tzinfo=timezone.utc)  >= start else None) for tup in q.all()]
     else:
         if start_date is not None:
             q = q.filter(truncated_time >= start_date)
