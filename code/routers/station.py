@@ -268,8 +268,6 @@ async def create_station_data(
 
     MeasurementClass = Measurement
 
-    station.time = datetime.fromisoformat(station.time)
-
     if station.calibration_mode:
         MeasurementClass = CalibrationMeasurement
 
