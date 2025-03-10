@@ -425,9 +425,13 @@ async def get_historical_station_data(
 
         for dim, val_list in dim_group.items():
             a = np.array(val_list)
-            low[dim] = np.percentile(a, 100 * (Dimension.ALPHA / 2))
-            high[dim] = np.percentile(a, 100 * (1 - (Dimension.ALPHA / 2))) 
-        
+            low[dim] = np.percentile(a, 100 * (0.001 / 2))
+            high[dim] = np.percentile(a, 100 * (1 - (0.001 / 2))) 
+
+        from pprint import pprint
+        pprint(low)
+        pprint(high)
+
         # set all the values to none if the time exceedes the time range
         data_list = [
             (
