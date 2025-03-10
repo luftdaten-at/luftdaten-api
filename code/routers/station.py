@@ -425,8 +425,8 @@ async def get_historical_station_data(
 
         for dim, val_list in dim_group.items():
             a = np.array(val_list)
-            low[dim] = np.percentile(a, 100 * (0.001 / 2))
-            high[dim] = np.percentile(a, 100 * (1 - (0.001 / 2))) 
+            low[dim] = np.percentile(a, 100 * (0.01 / 2))
+            high[dim] = np.percentile(a, 100 * (1 - (0.01 / 2))) 
 
         from pprint import pprint
         pprint(low)
@@ -438,7 +438,7 @@ async def get_historical_station_data(
                 device,
                 time,
                 dim,
-                val if time.replace(tzinfo=timezone.utc) >= start and low[dim] <= val <= high[dim]
+                val if time.replace(tzinfo=timezone.utc) >= start and low[dim] < val < high[dim]
                 else None
             ) for (device, time, dim, val) in q.all()
         ]
