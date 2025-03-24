@@ -1,15 +1,16 @@
+import csv
+import json
+import io
+import numpy as np
 from fastapi import APIRouter, BackgroundTasks, Depends, Response, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func, or_, text, case
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 from database import get_db
-import csv
-import json
-import io
 from functools import wraps
 from enum import Enum
-from itertools import groupby
+from collections import defaultdict
 
 from models import Station, Location, Measurement, CalibrationMeasurement, Values, StationStatus, HourlyDimensionAverages, City
 from schemas import StationDataCreate, SensorsCreate, StationStatusCreate
@@ -414,8 +415,33 @@ async def get_historical_station_data(
     if end == "current":
         start = datetime.now(tz=timezone.utc) - timedelta(minutes=CURRENT_TIME_RANGE_MINUTES)
         q = q.filter(truncated_time >= Station.last_active)
+
+        # filter outlier
+        dim_group = defaultdict(list)
+        low = {}
+        high = {}
+        for _, _, dim, val in q.all():
+            dim_group[dim].append(val)
+
+        for dim, val_list in dim_group.items():
+            a = np.array(val_list)
+            low[dim] = np.percentile(a, 100 * (0.01 / 2))
+            high[dim] = np.percentile(a, 100 * (1 - (0.01 / 2))) 
+
+        from pprint import pprint
+        pprint(low)
+        pprint(high)
+
         # set all the values to none if the time exceedes the time range
-        data_list = [(tup[0], tup[1], tup[2], tup[3] if tup[1].replace(tzinfo=timezone.utc) >= start else None) for tup in q.all()]
+        data_list = [
+            (
+                device,
+                time,
+                dim,
+                val if time.replace(tzinfo=timezone.utc) >= start and low[dim] < val < high[dim]
+                else None
+            ) for (device, time, dim, val) in q.all()
+        ]
     else:
         if start_date is not None:
             q = q.filter(truncated_time >= start_date)
