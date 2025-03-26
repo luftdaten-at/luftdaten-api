@@ -8,6 +8,7 @@ from enums import SensorModel
 from tqdm import tqdm
 from database import get_db
 from models import Station
+import threading
 
 
 # Folder where csv files are stored
@@ -70,6 +71,8 @@ def list_website(url, trys = 5):
     recursively finds all csv files and saves them to download_list.txt 
     """
 
+    print(f'Start: {url}')
+
     page = None
 
     for _ in range(trys):
@@ -82,19 +85,16 @@ def list_website(url, trys = 5):
             continue
 
     if not page:
-        log(f'Faild to list: {url}')
+        #log(f'Faild to list: {url}')
         return
 
     soup = BeautifulSoup(page, "html.parser")
 
     for item in reversed(soup.find_all("a")):
         link = item.get("href")
-        if re.fullmatch(PATTERN_DAY, link):
-            if not list_website(urljoin(url, link)):
-                return False
-        if re.fullmatch(PATTERN_YEAR, link):
-            if not list_website(urljoin(url, link)):
-                return False
+        if re.fullmatch(PATTERN_DAY, link) or re.fullmatch(PATTERN_YEAR, link):
+            threading.Thread(target=list_website, args=(urljoin(url, link),)).start()
+
         if link.endswith(".csv") or link.endswith(".gz"):
             for sensor_name in SensorModel._names.values():
                 if sensor_name.lower() in link:
@@ -102,10 +102,9 @@ def list_website(url, trys = 5):
             else:
                 continue
             csv_url = urljoin(url, link)
-            if csv_url in all_csv_urls:
-                return False
-            print(csv_url, file=open(DOWNLOAD_LIST, 'a'))
-    return True
+            all_csv_urls.add(csv_url)
+
+    print(f'Done ✅: {url}')
 
 
 def main():
@@ -118,6 +117,12 @@ def main():
     all_csv_urls = set(line.strip() for line in open(DOWNLOAD_LIST, "r").readlines())
     # append download list
     list_website(URL)
+
+    with open(DOWNLOAD_LIST, 'w') as f:
+        for line in all_csv_urls:
+            print(line, file=f)
+
+    '''
 
     # files that have already been downloaded
     cur_files = set(os.listdir(DOWNLOAD_FOLDER))
@@ -140,6 +145,7 @@ def main():
             log(f"Already downloaded: {file_name}")
             break
         download(url)
+    '''
 
 
 if __name__ == '__main__':

@@ -5,9 +5,10 @@ from tqdm import tqdm
 from sqlalchemy.orm import sessionmaker, scoped_session
 from sqlalchemy import create_engine
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
+from datetime import datetime, timezone
 from models import *
 from enums import SensorModel, Dimension
+from utils import float_default
 
 
 DOWNLOAD_FOLDER = "sensor_community_archive/csv"
@@ -28,6 +29,10 @@ DATABASE_URL = f"postgresql://{DB_USER}:{DB_PASS}@{DB_HOST}/{DB_NAME}"
 engine = create_engine(DATABASE_URL)
 db_session = scoped_session(sessionmaker(autocommit=False, autoflush=False, bind=engine))
 
+# GLOBALS to reduce queries
+location_to_device = {}
+sensor_model_name_to_num = {v.lower(): k for k, v in SensorModel._names.items()}
+
 
 def log(*l):
     """
@@ -40,86 +45,72 @@ def import_sensor_community_archive_from_csv(csv_file_path: str):
     """
     sensor_id;sensor_type;location;lat;lon;timestamp;pressure;altitude;pressure_sealevel;temperature
     """
-    db = db_session()
-    df = pd.read_csv(csv_file_path, encoding='utf8', sep=";")
+    df = pd.read_csv(csv_file_path, sep=";")
+
+    out_file_measurements = open(f'{csv_file_path}_measurements_out.sql', 'w')
+    out_file_values = open(f'{csv_file_path}_values_out.sql', 'w')
+
+    current_measurement_id = 1
+    current_value_id = 1
 
     for row in df.iterrows():
-        # check if sensor_id in database
+        # check if sensor_id in databaseflo
         idx, data = row
-        device = str(data['sensor_id'])
+
         time_measured = datetime.fromisoformat(data['timestamp'])
-        sensor_model = {v: k for k, v in SensorModel._names.items()}.get(data['sensor_type'], None)
-        db_station = db.query(Station).filter(Station.device == device).first()
+        sensor_model = sensor_model_name_to_num.get(data['sensor_type'].lower(), None)
+        lat = float(data['lat'])
+        lon = float(data['lon'])
 
-        if not db_station or not sensor_model:
-            continue
-
-        m = (
-            db.query(Measurement)
-            .filter(
-                Measurement.station_id == db_station.id,
-                Measurement.time_measured == time_measured,
-                Measurement.sensor_model == sensor_model
-            )
-            .first()
-        )
-
-        # if measurement is already present skip
-        if m:
-            continue
-
-        db_measurement = Measurement(
-            sensor_model=sensor_model,
-            station_id=db_station.id,
-            time_measured=time_measured,
-            time_received=None,
-            location_id=db_station.location_id
-        )
-
-        db.add(db_measurement)
-        db.commit()
-        db.refresh(db_measurement)
-
-        #log(f"Created measurement: {vars(db_measurement)}")
-
-        for dim_name, val in list(data.items())[6:]:
-            dim = Dimension.get_dimension_from_sensor_community_name_import(dim_name)
-            try:
-                val = float(val)
-            except ValueError:
-                #log(f"Value is not a float: {val}")
-                continue
-            if not dim:
-                continue
-            if val == float('nan'):
-                continue
-
-            db_value = Values(
-                dimension=dim,
-                value=float(val),
-                measurement_id=db_measurement.id
-            )
-            db.add(db_value)
-            #log(f"Added value: {vars(db_value)}")
-
-        db.commit()
-        db.close()
-
-# singel thread
-'''
-def main():
-    # List all files in the download folder and process them
-    for filename in tqdm(os.listdir(DOWNLOAD_FOLDER), desc="Import CSV files", unit="Files", file=open(PROGRESS_FILE, "w")):
-        file_path = os.path.join(DOWNLOAD_FOLDER, filename)
+        if (lat, lon) not in location_to_device or sensor_model is None:
+            return
         
-        # Ensure it's a file (not a directory)
-        if os.path.isfile(file_path):
-            # Read the file content as a string
-            import_sensor_community_archive_from_csv(file_path)
-'''
+        station_id, loc_id = location_to_device[lat, lon]
+
+        # create measurement
+        time_received = datetime.now(tz=timezone.utc)
+
+        measurement = '\t'.join(str(x) for x in [
+            current_measurement_id, 
+            time_received.strftime("%Y-%m-%d %H:%M:%S.%f"),
+            time_measured.strftime("%Y-%m-%d %H:%M:%S.%f"),
+            sensor_model,
+            loc_id,
+            station_id
+        ])
+
+        print(measurement, file = out_file_measurements)
+
+        current_measurement_id += 1
+
+        # create values
+        for key in data.keys()[6:]:
+            d = Dimension.get_dimension_from_sensor_community_name_import(key)
+            v = float_default(data[key])
+            if d is None or v is None:
+                continue
+                
+            value = '\t'.join(str(x) for x in [
+                current_value_id,
+                d,
+                v,
+                current_measurement_id - 1,
+                r'\N'
+            ])
+            current_value_id += 1
+
+            print(value, file = out_file_values)
+
 
 # multi thread
 def main():
+    global location_to_device
+
+    db = db_session()
+    data = db.query(Station.id, Location.id, Location.lat, Location.lon).join(Location).all()
+    for p in data:
+        location_to_device[p[2:]] = p[:2]
+
     # List all files in the download folder
     files = [
         os.path.join(DOWNLOAD_FOLDER, filename)
