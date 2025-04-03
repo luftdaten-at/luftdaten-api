@@ -414,23 +414,28 @@ async def get_historical_station_data(
     data_list = []
     if end == "current":
         start = datetime.now(tz=timezone.utc) - timedelta(minutes=CURRENT_TIME_RANGE_MINUTES)
-        q = q.filter(truncated_time >= Station.last_active)
+
+        #q = q.filter(truncated_time >= Station.last_active)
+        #data = q.all()
+
+        data = db.execute(text("""select s.device, m.time_measured, v.dimension, avg(v.value) from stations as s 
+inner join measurements m on m.station_id = s.id
+inner join values v on v.measurement_id = m.id
+where s.last_active = m.time_measured
+group by s.id, s.device, m.time_measured, v.dimension;""")).all()
 
         # filter outlier
         dim_group = defaultdict(list)
         low = {}
         high = {}
-        for _, _, dim, val in q.all():
+
+        for _, _, dim, val in data:
             dim_group[dim].append(val)
 
         for dim, val_list in dim_group.items():
             a = np.array(val_list)
             low[dim] = np.percentile(a, 100 * (0.01 / 2))
             high[dim] = np.percentile(a, 100 * (1 - (0.01 / 2))) 
-
-        from pprint import pprint
-        pprint(low)
-        pprint(high)
 
         # set all the values to none if the time exceedes the time range
         data_list = [
@@ -440,7 +445,7 @@ async def get_historical_station_data(
                 dim,
                 val if time.replace(tzinfo=timezone.utc) >= start and low[dim] < val < high[dim]
                 else None
-            ) for (device, time, dim, val) in q.all()
+            ) for (device, time, dim, val) in data
         ]
     else:
         if start_date is not None:
