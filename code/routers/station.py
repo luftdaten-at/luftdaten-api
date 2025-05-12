@@ -21,6 +21,35 @@ from enums import Precision, OutputFormat, Order, Dimension, CURRENT_TIME_RANGE_
 router = APIRouter()
 
 
+@router.get("/info", response_class=Response, tags=['station'])
+async def get_station_info(
+    station_id: str,
+    db: Session = Depends(get_db)
+):
+    station = db.query(Station).filter(Station.device == station_id).first()
+    if station is None:
+        raise HTTPException(status_code=404, detail="Station not found")
+    measurements = db.query(Measurement).filter(Measurement.time_measured == station.last_active).all()
+    j = {
+        "station":{
+            "time": station.last_active.isoformat(),
+            "device": station.device,
+            "firmware": station.firmware,
+            "location": {
+                "lat": station.location.lat,
+                "lon": station.location.lon,
+                "height": station.location.height
+            }
+        },
+        "sensors": {
+            #k : {v} for k
+            idx : {"type": m.sensor_model, "data": {v.dimension: v.value for v in m.values}}
+            for idx, m in enumerate(measurements)
+        }
+    }
+    return Response(content=json.dumps(j), media_type='application/json')
+
+
 # Old endpoints for compatability reason
 @router.get("/current/all", response_class=Response)
 async def get_current_station_data_all(
