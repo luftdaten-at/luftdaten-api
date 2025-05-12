@@ -29,7 +29,7 @@ async def get_station_info(
     station = db.query(Station).filter(Station.device == station_id).first()
     if station is None:
         raise HTTPException(status_code=404, detail="Station not found")
-    measurements = db.query(Measurement).filter(Measurement.time_measured == station.last_active).all()
+    measurements = db.query(Measurement).filter(Measurement.station_id == station.id, Measurement.time_measured == station.last_active).all()
     j = {
         "station":{
             "time": station.last_active.isoformat(),
