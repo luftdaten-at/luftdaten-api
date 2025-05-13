@@ -37,7 +37,7 @@ async def get_calibration_data(
     if data:
         measurements = []
         for station in stations:
-            measurements.extend(db.query(CalibrationMeasurement).filter(CalibrationMeasurement.station.id == station.id).all())
+            measurements.extend(db.query(CalibrationMeasurement).filter(CalibrationMeasurement.station_id == station.id).all())
         for m in measurements:
             for v in m.values:
                 csv.append(','.join(str(x) for x in [
