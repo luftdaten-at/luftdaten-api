@@ -21,6 +21,27 @@ from enums import Precision, OutputFormat, Order, Dimension, CURRENT_TIME_RANGE_
 router = APIRouter()
 
 
+@router.get('/calibration', response_class=Response, tags=['station', 'calibration'])
+async def get_calibration_data(
+    db: Session = Depends(get_db)
+):
+    # csv
+    # device id, sensor.model, dimension, value, time
+    csv = []
+    measurements = db.query(CalibrationMeasurement).all()
+    for m in measurements:
+        for v in m.values:
+            csv.append(','.join(str(x) for x in [
+                m.station.device,
+                m.sensor_model,
+                v.dimension,
+                v.value,
+                m.time_measured,
+            ]))
+    
+    return Response(content='\n'.join(csv), media_type="text/csv")
+
+
 @router.get("/info", response_class=Response, tags=['station'])
 async def get_station_info(
     station_id: str,
