@@ -34,10 +34,11 @@ async def get_calibration_data(
     # csv
     # device id, sensor.model, dimension, value, time
     csv = []
+    lower = datetime.now(timezone.utc) - timedelta(hours=1)
     if data:
         measurements = []
         for station in stations:
-            measurements.extend(db.query(CalibrationMeasurement).filter(CalibrationMeasurement.station_id == station.id).all())
+            measurements.extend(db.query(CalibrationMeasurement).filter(CalibrationMeasurement.station_id == station.id, CalibrationMeasurement.time_measured >= lower).all())
         for m in measurements:
             for v in m.values:
                 csv.append(','.join(str(x) for x in [
