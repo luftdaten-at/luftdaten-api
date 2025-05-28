@@ -21,6 +21,43 @@ from enums import Precision, OutputFormat, Order, Dimension, CURRENT_TIME_RANGE_
 router = APIRouter()
 
 
+@router.get('/calibration', response_class=Response, tags=['station', 'calibration'])
+async def get_calibration_data(
+    station_ids: str = None,
+    data: bool = True,
+    hours: int = 1,
+    db: Session = Depends(get_db)
+):
+    stations = db.query(Station).join(Station.calibration_measurements).all()
+    if station_ids is not None:
+        station_id_list = station_ids.split(",")
+        stations = db.query(Station).filter(Station.device.in_(station_id_list)).all()
+    # csv
+    # device id, sensor.model, dimension, value, time
+    csv = []
+    lower = datetime.now(timezone.utc) - timedelta(hours=hours)
+    if data:
+        measurements = []
+        for station in stations:
+            q = db.query(CalibrationMeasurement).filter(CalibrationMeasurement.station_id == station.id, CalibrationMeasurement.time_measured >= lower)
+            #print(q)
+            measurements.extend(q.all())
+        for m in measurements:
+            for v in m.values:
+                csv.append(','.join(str(x) for x in [
+                    m.station.device,
+                    m.sensor_model,
+                    v.dimension,
+                    v.value,
+                    m.time_measured,
+                ]))
+    else:
+        for station in stations:
+            csv.append(str(station.device))
+    
+    return Response(content='\n'.join(csv), media_type="text/csv")
+
+
 @router.get("/info", response_class=Response, tags=['station'])
 async def get_station_info(
     station_id: str,
