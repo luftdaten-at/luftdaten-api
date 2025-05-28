@@ -25,6 +25,7 @@ router = APIRouter()
 async def get_calibration_data(
     station_ids: str = None,
     data: bool = True,
+    hours: int = 1,
     db: Session = Depends(get_db)
 ):
     stations = db.query(Station).join(Station.calibration_measurements).all()
@@ -34,11 +35,13 @@ async def get_calibration_data(
     # csv
     # device id, sensor.model, dimension, value, time
     csv = []
-    lower = datetime.now(timezone.utc) - timedelta(hours=1)
+    lower = datetime.now(timezone.utc) - timedelta(hours=hours)
     if data:
         measurements = []
         for station in stations:
-            measurements.extend(db.query(CalibrationMeasurement).filter(CalibrationMeasurement.station_id == station.id, CalibrationMeasurement.time_measured >= lower).all())
+            q = db.query(CalibrationMeasurement).filter(CalibrationMeasurement.station_id == station.id, CalibrationMeasurement.time_measured >= lower)
+            #print(q)
+            measurements.extend(q.all())
         for m in measurements:
             for v in m.values:
                 csv.append(','.join(str(x) for x in [
