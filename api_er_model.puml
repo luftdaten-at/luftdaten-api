@@ -10,7 +10,7 @@ entity "City" as City {
     + id : Integer [PK]
     + name : String [index]
     + slug : String [unique, index]
-    + tz : String
+    + tz : String [nullable]
     + lat : Float
     + lon : Float
     --
@@ -48,12 +48,23 @@ entity "Measurement" as Measurement {
     + station_id : Integer [FK]
 }
 
+entity "CalibrationMeasurement" as CalibrationMeasurement {
+    + id : Integer [PK]
+    + time_received : DateTime
+    + time_measured : DateTime
+    + sensor_model : Integer
+    --
+    + location_id : Integer [FK]
+    + station_id : Integer [FK]
+}
+
 entity "Values" as Values {
     + id : Integer [PK]
     + dimension : Integer
     + value : Float
     --
     + measurement_id : Integer [FK]
+    + calibration_measurement_id : Integer [FK]
 }
 
 entity "StationStatus" as StationStatus {
@@ -70,12 +81,17 @@ entity "HourlyDimensionAverages" as HourlyDimensionAverages {
     + dimension_avg : JSON
 }
 
+' Relationships
 Country ||--o{ City : "has"
 City ||--o{ Location : "has"
 Country ||--o{ Location : "has"
 Location ||--o{ Station : "has"
+Location ||--o{ Measurement : "records"
+Location ||--o{ CalibrationMeasurement : "records"
 Station ||--o{ Measurement : "records"
-Measurement ||--o{ Values : "has"
+Station ||--o{ CalibrationMeasurement : "records"
 Station ||--o{ StationStatus : "tracks"
 Station ||--o{ HourlyDimensionAverages : "calculates"
+Measurement ||--o{ Values : "has"
+CalibrationMeasurement ||--o{ Values : "has"
 @enduml
