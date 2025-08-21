@@ -53,6 +53,9 @@ pytest tests/test_city.py::TestCityRouter -v
 
 # Run only health router tests
 pytest tests/test_health.py::TestHealthRouter -v
+
+# Run only station router tests
+pytest tests/test_station.py::TestStationRouter -v
 ```
 
 ## Test Database Configuration
@@ -66,6 +69,50 @@ The tests use a separate test database with the following configuration:
 Make sure this database is available and accessible during testing.
 
 ## Test Features
+
+### Station Router Tests (`test_station.py`)
+
+- **GET /v1/station/current** - Current station data
+  - No data scenario (404)
+  - With sample data (GeoJSON format)
+  - CSV format output
+  - With calibration data
+  - Specific station IDs
+  - Inactive stations (outside last_active window)
+
+- **GET /v1/station/info** - Station information
+  - Station not found (404)
+  - Existing station info (JSON response)
+
+- **GET /v1/station/calibration** - Calibration data
+  - No stations (empty CSV)
+  - With calibration data
+  - Specific station IDs
+  - Data flag (data=false)
+
+- **POST /v1/station/data** - Station data creation
+  - Successful station data posting
+  - Database verification
+
+- **POST /v1/station/status** - Station status
+  - Successful status posting
+
+- **GET /v1/station/all** - All stations
+  - No data (empty CSV)
+  - With data (CSV format)
+  - JSON format output
+
+- **GET /v1/station/topn** - Top N stations
+  - Top N stations by dimension
+
+- **GET /v1/station/historical** - Historical data
+  - Historical data with station IDs
+  - End=current scenario
+  - Invalid date format (400 error)
+
+- **Legacy endpoints** - Backward compatibility
+  - GET /v1/station/current/all (old endpoint)
+  - GET /v1/station/history (old endpoint)
 
 ### City Router Tests (`test_city.py`)
 
@@ -106,8 +153,10 @@ Make sure this database is available and accessible during testing.
 The tests create realistic test data including:
 - Countries (Austria, Germany)
 - Cities (Vienna, Berlin) with coordinates and timezones
-- Stations with locations
+- Stations with locations and firmware information
 - Measurements with various sensor values (P1, P2, temperature)
+- Calibration measurements and values
+- Station status information
 
 ## Mocking
 
