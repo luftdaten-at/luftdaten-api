@@ -1,6 +1,9 @@
 import sys
 import os
-sys.path.append(os.path.dirname(os.path.abspath(__file__)) + '/../')
+
+# Add the parent directory to the path so we can import modules
+# This must be done BEFORE any imports from the parent directory
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pytest
 from fastapi.testclient import TestClient
@@ -10,7 +13,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import NullPool
 from apscheduler.schedulers.background import BackgroundScheduler
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, PropertyMock
 from datetime import datetime
 
 # Configure test database
@@ -34,7 +37,12 @@ app.dependency_overrides[get_db] = override_get_db
 def setup_database():
     Base.metadata.create_all(bind=engine)
     yield
-    Base.metadata.drop_all(bind=engine)
+    # Drop all tables, ignoring errors if tables don't exist
+    try:
+        Base.metadata.drop_all(bind=engine)
+    except Exception:
+        # Ignore errors during teardown (e.g., tables already dropped)
+        pass
 
 @pytest.fixture
 def mock_scheduler():
@@ -62,7 +70,7 @@ class TestHealthRouter:
     def test_comprehensive_health_check_all_healthy(self, mock_scheduler):
         """Test comprehensive health check when all components are healthy"""
         # Mock the database connection
-        with patch('code.routers.health.engine') as mock_engine:
+        with patch('routers.health.engine') as mock_engine:
             mock_connection = MagicMock()
             mock_result = MagicMock()
             mock_result.fetchone.return_value = [1]
@@ -70,7 +78,7 @@ class TestHealthRouter:
             mock_engine.connect.return_value.__enter__.return_value = mock_connection
             
             # Mock the scheduler
-            with patch('code.routers.health.scheduler', mock_scheduler):
+            with patch('routers.health.scheduler', mock_scheduler):
                 response = client.get("/v1/health/")
                 assert response.status_code == 200
                 
@@ -86,15 +94,15 @@ class TestHealthRouter:
     def test_comprehensive_health_check_database_unhealthy(self, mock_scheduler):
         """Test comprehensive health check when database is unhealthy"""
         # Mock the database connection to fail
-        with patch('code.routers.health.engine') as mock_engine:
+        with patch('routers.health.engine') as mock_engine:
             mock_engine.connect.side_effect = Exception("Database connection failed")
             
             # Mock the scheduler
-            with patch('code.routers.health.scheduler', mock_scheduler):
+            with patch('routers.health.scheduler', mock_scheduler):
                 response = client.get("/v1/health/")
                 assert response.status_code == 503
                 
-                data = response.json()
+                data = response.json()["detail"]
                 assert data["status"] == "unhealthy"
                 assert data["version"] == "0.3"
                 assert "timestamp" in data
@@ -107,7 +115,7 @@ class TestHealthRouter:
     def test_comprehensive_health_check_scheduler_unhealthy(self):
         """Test comprehensive health check when scheduler is unhealthy"""
         # Mock the database connection
-        with patch('code.routers.health.engine') as mock_engine:
+        with patch('routers.health.engine') as mock_engine:
             mock_connection = MagicMock()
             mock_result = MagicMock()
             mock_result.fetchone.return_value = [1]
@@ -118,11 +126,11 @@ class TestHealthRouter:
             unhealthy_scheduler = MagicMock(spec=BackgroundScheduler)
             unhealthy_scheduler.running = False
             
-            with patch('code.routers.health.scheduler', unhealthy_scheduler):
+            with patch('routers.health.scheduler', unhealthy_scheduler):
                 response = client.get("/v1/health/")
                 assert response.status_code == 503
                 
-                data = response.json()
+                data = response.json()["detail"]
                 assert data["status"] == "unhealthy"
                 assert data["version"] == "0.3"
                 assert "timestamp" in data
@@ -133,7 +141,7 @@ class TestHealthRouter:
     def test_comprehensive_health_check_scheduler_none(self):
         """Test comprehensive health check when scheduler is None"""
         # Mock the database connection
-        with patch('code.routers.health.engine') as mock_engine:
+        with patch('routers.health.engine') as mock_engine:
             mock_connection = MagicMock()
             mock_result = MagicMock()
             mock_result.fetchone.return_value = [1]
@@ -141,33 +149,34 @@ class TestHealthRouter:
             mock_engine.connect.return_value.__enter__.return_value = mock_connection
             
             # Mock the scheduler to be None
-            with patch('code.routers.health.scheduler', None):
+            with patch('routers.health.scheduler', None):
                 response = client.get("/v1/health/")
                 assert response.status_code == 503
                 
-                data = response.json()
+                data = response.json()["detail"]
                 assert data["status"] == "unhealthy"
                 assert data["checks"]["scheduler"] == "unhealthy"
     
     def test_comprehensive_health_check_scheduler_exception(self):
         """Test comprehensive health check when scheduler raises an exception"""
         # Mock the database connection
-        with patch('code.routers.health.engine') as mock_engine:
+        with patch('routers.health.engine') as mock_engine:
             mock_connection = MagicMock()
             mock_result = MagicMock()
             mock_result.fetchone.return_value = [1]
             mock_connection.execute.return_value = mock_result
             mock_engine.connect.return_value.__enter__.return_value = mock_connection
             
-            # Mock the scheduler to raise an exception
+            # Mock the scheduler to raise an exception when accessing .running
             broken_scheduler = MagicMock(spec=BackgroundScheduler)
-            broken_scheduler.running.side_effect = Exception("Scheduler error")
+            # When accessing .running, raise exception
+            type(broken_scheduler).running = PropertyMock(side_effect=Exception("Scheduler error"))
             
-            with patch('code.routers.health.scheduler', broken_scheduler):
+            with patch('routers.health.scheduler', broken_scheduler):
                 response = client.get("/v1/health/")
                 assert response.status_code == 503
                 
-                data = response.json()
+                data = response.json()["detail"]
                 assert data["status"] == "unhealthy"
                 assert data["checks"]["scheduler"] == "unhealthy"
                 assert "scheduler_error" in data
@@ -179,14 +188,14 @@ class TestHealthRouter:
         mock_scheduler.get_jobs.return_value = [MagicMock(), MagicMock(), MagicMock()]
         
         # Mock the database connection
-        with patch('code.routers.health.engine') as mock_engine:
+        with patch('routers.health.engine') as mock_engine:
             mock_connection = MagicMock()
             mock_result = MagicMock()
             mock_result.fetchone.return_value = [1]
             mock_connection.execute.return_value = mock_result
             mock_engine.connect.return_value.__enter__.return_value = mock_connection
             
-            with patch('code.routers.health.scheduler', mock_scheduler):
+            with patch('routers.health.scheduler', mock_scheduler):
                 response = client.get("/v1/health/")
                 assert response.status_code == 200
                 
@@ -196,18 +205,18 @@ class TestHealthRouter:
     def test_comprehensive_health_check_database_and_scheduler_unhealthy(self):
         """Test comprehensive health check when both database and scheduler are unhealthy"""
         # Mock the database connection to fail
-        with patch('code.routers.health.engine') as mock_engine:
+        with patch('routers.health.engine') as mock_engine:
             mock_engine.connect.side_effect = Exception("Database connection failed")
             
             # Mock the scheduler to be unhealthy
             unhealthy_scheduler = MagicMock(spec=BackgroundScheduler)
             unhealthy_scheduler.running = False
             
-            with patch('code.routers.health.scheduler', unhealthy_scheduler):
+            with patch('routers.health.scheduler', unhealthy_scheduler):
                 response = client.get("/v1/health/")
                 assert response.status_code == 503
                 
-                data = response.json()
+                data = response.json()["detail"]
                 assert data["status"] == "unhealthy"
                 assert data["checks"]["database"] == "unhealthy"
                 assert data["checks"]["scheduler"] == "unhealthy"
@@ -217,14 +226,14 @@ class TestHealthRouter:
     def test_health_check_response_structure(self, mock_scheduler):
         """Test that health check response has the correct structure"""
         # Mock the database connection
-        with patch('code.routers.health.engine') as mock_engine:
+        with patch('routers.health.engine') as mock_engine:
             mock_connection = MagicMock()
             mock_result = MagicMock()
             mock_result.fetchone.return_value = [1]
             mock_connection.execute.return_value = mock_result
             mock_engine.connect.return_value.__enter__.return_value = mock_connection
             
-            with patch('code.routers.health.scheduler', mock_scheduler):
+            with patch('routers.health.scheduler', mock_scheduler):
                 response = client.get("/v1/health/")
                 assert response.status_code == 200
                 

@@ -22,9 +22,44 @@ services:
       - .env
     networks:
       - internal
- 
+  db_test:
+    image: postgres:16
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_USER: test_user
+      POSTGRES_PASSWORD: test_password
+      POSTGRES_DB: test_database
+    volumes:
+      - postgres_test_data:/var/lib/postgresql/data
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U test_user -d test_database"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+  test:
+    build: .
+    command: pytest tests/ -v --durations=0
+    volumes:
+      - ./code:/usr/src/app
+    working_dir: /usr/src/app
+    depends_on:
+      db_test:
+        condition: service_healthy
+    networks:
+      - internal
+    environment:
+      POSTGRES_USER: test_user
+      POSTGRES_PASSWORD: test_password
+      DB_HOST: db_test
+      POSTGRES_DB: test_database
+      PYTHONPATH: /usr/src/app
+
 networks:
   internal:
 
 volumes:
   postgres_data:
+  postgres_test_data:

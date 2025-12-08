@@ -1,6 +1,9 @@
 import sys
 import os
-sys.path.append(os.path.dirname(os.path.abspath(__file__)) + '/../')
+
+# Add the parent directory to the path so we can import modules
+# This must be done BEFORE any imports from the parent directory
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pytest
 from fastapi.testclient import TestClient
@@ -34,7 +37,12 @@ app.dependency_overrides[get_db] = override_get_db
 def setup_database():
     Base.metadata.create_all(bind=engine)
     yield
-    Base.metadata.drop_all(bind=engine)
+    # Drop all tables, ignoring errors if tables don't exist
+    try:
+        Base.metadata.drop_all(bind=engine)
+    except Exception:
+        # Ignore errors during teardown (e.g., tables already dropped)
+        pass
 
 @pytest.fixture
 def sample_data():
@@ -42,7 +50,7 @@ def sample_data():
     db = next(override_get_db())
     
     # Create country
-    country = Country(name="Austria", slug="austria")
+    country = Country(name="Austria", code="AT")
     db.add(country)
     db.commit()
     db.refresh(country)
@@ -50,11 +58,10 @@ def sample_data():
     # Create city
     city = City(
         name="Vienna", 
-        slug="vienna", 
         country_id=country.id,
+        tz="Europe/Vienna",
         lat=48.2082,
-        lon=16.3738,
-        tz="Europe/Vienna"
+        lon=16.3738
     )
     db.add(city)
     db.commit()
@@ -71,29 +78,38 @@ def sample_data():
     db.commit()
     db.refresh(location)
     
-    # Create station
+    # Create station (need to set last_active for it to be considered active)
+    # Use the same timestamp for both station.last_active and measurement.time_measured
+    from enums import SensorModel
+    measurement_time = datetime.now(timezone.utc)
     station = Station(
         device="test_station_1",
-        location_id=location.id
+        location_id=location.id,
+        last_active=measurement_time
     )
     db.add(station)
     db.commit()
     db.refresh(station)
     
-    # Create measurement
+    # Create measurement (using integer sensor model ID: SDS011=13)
+    # Use the same time as station.last_active
+    # Measurement needs location_id for the city query to work
     measurement = Measurement(
         station_id=station.id,
-        time_measured=datetime.now(timezone.utc)
+        location_id=location.id,
+        time_measured=measurement_time,
+        sensor_model=SensorModel.SDS011
     )
     db.add(measurement)
     db.commit()
     db.refresh(measurement)
     
-    # Create values
+    # Create values (using integer dimension IDs: PM1_0=2, PM2_5=3, TEMPERATURE=7)
+    from enums import Dimension
     values = [
-        Values(measurement_id=measurement.id, dimension="P1", value=10.5),
-        Values(measurement_id=measurement.id, dimension="P2", value=5.2),
-        Values(measurement_id=measurement.id, dimension="temperature", value=22.0)
+        Values(measurement_id=measurement.id, dimension=Dimension.PM1_0, value=10.5),
+        Values(measurement_id=measurement.id, dimension=Dimension.PM2_5, value=5.2),
+        Values(measurement_id=measurement.id, dimension=Dimension.TEMPERATURE, value=22.0)
     ]
     for value in values:
         db.add(value)
@@ -136,18 +152,17 @@ class TestCityRouter:
         db = next(override_get_db())
         
         # Add another city
-        country2 = Country(name="Germany", slug="germany")
+        country2 = Country(name="Germany", code="DE")
         db.add(country2)
         db.commit()
         db.refresh(country2)
         
         city2 = City(
             name="Berlin", 
-            slug="berlin", 
             country_id=country2.id,
+            tz="Europe/Berlin",
             lat=52.5200,
-            lon=13.4050,
-            tz="Europe/Berlin"
+            lon=13.4050
         )
         db.add(city2)
         db.commit()
@@ -237,8 +252,13 @@ class TestCityRouter:
         db = next(override_get_db())
         
         # Update measurement to be older than 1 hour
+        # Query by known device name to avoid DetachedInstanceError
         old_time = datetime.now(timezone.utc) - timedelta(hours=2)
-        sample_data["measurement"].time_measured = old_time
+        station = db.query(Station).filter(Station.device == "test_station_1").first()
+        station.last_active = old_time
+        # Query measurement by station_id
+        measurement = db.query(Measurement).filter(Measurement.station_id == station.id).first()
+        measurement.time_measured = old_time
         db.commit()
         
         response = client.get("/v1/city/current?city_slug=vienna")
@@ -252,28 +272,40 @@ class TestCityRouter:
         """Test getting current measurements with multiple stations"""
         db = next(override_get_db())
         
-        # Add another station
+        # Get location_id by querying by known coordinates to avoid DetachedInstanceError
+        location = db.query(Location).filter(Location.lat == 48.2082, Location.lon == 16.3738).first()
+        location_id = location.id
+        
+        # Add another station with last_active set
+        measurement_time2 = datetime.now(timezone.utc)
         station2 = Station(
             device="test_station_2",
-            location_id=sample_data["location"].id
+            location_id=location_id,
+            last_active=measurement_time2
         )
         db.add(station2)
         db.commit()
         db.refresh(station2)
         
-        # Add measurement for second station
+        # Add measurement for second station (using integer sensor model ID: SDS011=13)
+        # Use the same time as station2.last_active
+        # Measurement needs location_id for the city query to work
+        from enums import SensorModel
         measurement2 = Measurement(
             station_id=station2.id,
-            time_measured=datetime.now(timezone.utc)
+            location_id=location_id,
+            time_measured=measurement_time2,
+            sensor_model=SensorModel.SDS011
         )
         db.add(measurement2)
         db.commit()
         db.refresh(measurement2)
         
         # Add values for second measurement
+        from enums import Dimension
         values2 = [
-            Values(measurement_id=measurement2.id, dimension="P1", value=15.0),
-            Values(measurement_id=measurement2.id, dimension="P2", value=8.0)
+            Values(measurement_id=measurement2.id, dimension=Dimension.PM1_0, value=15.0),
+            Values(measurement_id=measurement2.id, dimension=Dimension.PM2_5, value=8.0)
         ]
         for value in values2:
             db.add(value)

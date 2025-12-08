@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException
 from database import engine
 from sqlalchemy import text
 from apscheduler.schedulers.background import BackgroundScheduler
-from datetime import datetime
+from datetime import datetime, timezone
 
 router = APIRouter()
 
@@ -21,7 +21,7 @@ async def health_check():
     """
     health_status = {
         "status": "healthy",
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "version": "0.3",
         "checks": {
             "api": "healthy",
@@ -67,6 +67,6 @@ async def simple_health_check():
     """
     return {
         "status": "healthy",
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "version": "0.3"
     }

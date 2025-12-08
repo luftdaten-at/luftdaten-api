@@ -557,7 +557,17 @@ async def get_all_stations(
 
     # Rückgabe als JSON
     if output_format == "json":
-        return result
+        # Convert datetime objects to ISO format strings for JSON serialization
+        json_result = []
+        for station_data in result:
+            json_station = {
+                "id": station_data["id"],
+                "last_active": station_data["last_active"].isoformat() if station_data["last_active"] else None,
+                "location": station_data["location"],
+                "measurements_count": station_data["measurements_count"]
+            }
+            json_result.append(json_station)
+        return Response(content=json.dumps(json_result), media_type="application/json")
     
     # Rückgabe als CSV
     else:

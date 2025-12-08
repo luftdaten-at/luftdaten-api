@@ -71,7 +71,32 @@ scheduler.add_job(import_sensor_community_data, 'interval', minutes=5)
 scheduler.start()
 
 # Stellen Sie sicher, dass der Scheduler sauber beendet wird
-atexit.register(lambda: scheduler.shutdown())
+def shutdown_scheduler():
+    """Shutdown scheduler, handling potential logging errors during test teardown"""
+    try:
+        # Suppress scheduler's logger to prevent logging errors when handlers are closed
+        scheduler_logger = logging.getLogger('apscheduler')
+        original_level = scheduler_logger.level
+        scheduler_logger.setLevel(logging.CRITICAL)
+        
+        # Also disable all handlers temporarily
+        original_handlers = scheduler_logger.handlers[:]
+        scheduler_logger.handlers.clear()
+        
+        try:
+            scheduler.shutdown()
+        finally:
+            # Restore logger state (though this may not work if logging is already shut down)
+            try:
+                scheduler_logger.setLevel(original_level)
+                scheduler_logger.handlers = original_handlers
+            except (ValueError, OSError, AttributeError):
+                pass
+    except (ValueError, OSError, AttributeError):
+        # Ignore any errors during shutdown - logging may already be closed
+        pass
+
+atexit.register(shutdown_scheduler)
 
 
 # Middleware to add /v1 prefix to all routes

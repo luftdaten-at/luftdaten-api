@@ -1,6 +1,9 @@
 import sys
 import os
-sys.path.append(os.path.dirname(os.path.abspath(__file__)) + '/../')
+
+# Add the parent directory to the path so we can import modules
+# This must be done BEFORE any imports from the parent directory
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pytest
 from fastapi.testclient import TestClient
@@ -11,9 +14,11 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import NullPool
 from datetime import datetime, timezone, timedelta
+from zoneinfo import ZoneInfo
 import json
 import csv
 import io
+from unittest.mock import patch, MagicMock
 
 # Configure test database
 SQLALCHEMY_DATABASE_URL = "postgresql://test_user:test_password@db_test/test_database"
@@ -36,7 +41,12 @@ app.dependency_overrides[get_db] = override_get_db
 def setup_database():
     Base.metadata.create_all(bind=engine)
     yield
-    Base.metadata.drop_all(bind=engine)
+    # Drop all tables, ignoring errors if tables don't exist
+    try:
+        Base.metadata.drop_all(bind=engine)
+    except Exception:
+        # Ignore errors during teardown (e.g., tables already dropped)
+        pass
 
 @pytest.fixture
 def sample_data():
@@ -44,7 +54,7 @@ def sample_data():
     db = next(override_get_db())
     
     # Create country
-    country = Country(name="Austria", slug="austria")
+    country = Country(name="Austria", code="AT")
     db.add(country)
     db.commit()
     db.refresh(country)
@@ -52,11 +62,10 @@ def sample_data():
     # Create city
     city = City(
         name="Vienna", 
-        slug="vienna", 
         country_id=country.id,
+        tz="Europe/Vienna",
         lat=48.2082,
-        lon=16.3738,
-        tz="Europe/Vienna"
+        lon=16.3738
     )
     db.add(city)
     db.commit()
@@ -84,40 +93,46 @@ def sample_data():
     db.commit()
     db.refresh(station)
     
-    # Create measurement
+    # Create measurement (using integer sensor model ID: SDS011=13)
+    from enums import SensorModel
     measurement = Measurement(
         station_id=station.id,
+        location_id=location.id,
         time_measured=station.last_active,
-        sensor_model="SDS011"
+        sensor_model=SensorModel.SDS011
     )
     db.add(measurement)
     db.commit()
     db.refresh(measurement)
     
-    # Create values
+    # Create values (using integer dimension IDs: PM1_0=2, PM2_5=3, TEMPERATURE=7)
+    from enums import Dimension
     values = [
-        Values(measurement_id=measurement.id, dimension="P1", value=10.5),
-        Values(measurement_id=measurement.id, dimension="P2", value=5.2),
-        Values(measurement_id=measurement.id, dimension="temperature", value=22.0)
+        Values(measurement_id=measurement.id, dimension=Dimension.PM1_0, value=10.5),
+        Values(measurement_id=measurement.id, dimension=Dimension.PM2_5, value=5.2),
+        Values(measurement_id=measurement.id, dimension=Dimension.TEMPERATURE, value=22.0)
     ]
     for value in values:
         db.add(value)
     db.commit()
     
-    # Create calibration measurement
+    # Create calibration measurement (using integer sensor model ID: SDS011=13)
+    from enums import SensorModel
     calibration_measurement = CalibrationMeasurement(
         station_id=station.id,
+        location_id=location.id,
         time_measured=station.last_active,
-        sensor_model="SDS011"
+        sensor_model=SensorModel.SDS011
     )
     db.add(calibration_measurement)
     db.commit()
     db.refresh(calibration_measurement)
     
-    # Create calibration values
+    # Create calibration values (using integer dimension IDs: PM1_0=2, PM2_5=3)
+    from enums import Dimension
     calibration_values = [
-        Values(calibration_measurement_id=calibration_measurement.id, dimension="P1", value=9.8),
-        Values(calibration_measurement_id=calibration_measurement.id, dimension="P2", value=4.9)
+        Values(calibration_measurement_id=calibration_measurement.id, dimension=Dimension.PM1_0, value=9.8),
+        Values(calibration_measurement_id=calibration_measurement.id, dimension=Dimension.PM2_5, value=4.9)
     ]
     for value in calibration_values:
         db.add(value)
@@ -141,7 +156,7 @@ class TestStationRouter:
         response = client.get("/v1/station/current")
         assert response.status_code == 404
         assert response.json() == {"detail": "No stations found"}
-    
+
     def test_get_current_station_data_with_data(self, sample_data):
         """Test getting current station data with sample data"""
         response = client.get("/v1/station/current")
@@ -200,16 +215,26 @@ class TestStationRouter:
         """Test getting current station data with inactive stations (outside last_active window)"""
         db = next(override_get_db())
         
-        # Make station inactive by setting last_active to old time
-        old_time = datetime.now(timezone.utc) - timedelta(hours=2)
-        sample_data["station"].last_active = old_time
-        sample_data["measurement"].time_measured = old_time
+        # Make station inactive by setting last_active to old time (more than 3600 seconds ago)
+        # The endpoint uses Europe/Vienna timezone, so we need to account for that
+        vienna_tz = ZoneInfo("Europe/Vienna")
+        # Set to 2 hours ago in Vienna timezone to ensure it's outside the 1-hour window
+        old_time = datetime.now(vienna_tz) - timedelta(hours=2)
+        # Convert to UTC for database storage (if needed) or keep as timezone-aware
+        old_time_utc = old_time.astimezone(timezone.utc).replace(tzinfo=None)
+        
+        # Query station by known device name to avoid DetachedInstanceError
+        station = db.query(Station).filter(Station.device == "test_station_1").first()
+        station.last_active = old_time_utc
+        # Query measurement by station_id
+        measurement = db.query(Measurement).filter(Measurement.station_id == station.id).first()
+        measurement.time_measured = old_time_utc
         db.commit()
         
         response = client.get("/v1/station/current")
         assert response.status_code == 404
         assert response.json() == {"detail": "No stations found"}
-    
+
     def test_get_station_info_not_found(self):
         """Test getting station info for non-existent station"""
         response = client.get("/v1/station/info?station_id=nonexistent")
@@ -251,7 +276,8 @@ class TestStationRouter:
         
         # Check that calibration data is present
         assert "test_station_1" in csv_content
-        assert "SDS011" in csv_content
+        # Sensor model is stored as integer (13 for SDS011), not string
+        assert "13" in csv_content
     
     def test_get_calibration_data_specific_stations(self, sample_data):
         """Test getting calibration data for specific stations"""
@@ -274,15 +300,15 @@ class TestStationRouter:
     def test_post_station_data_success(self):
         """Test posting station data successfully"""
         station_data = {
-            "device": "test_device_123",
-            "location": {
-                "lat": 48.2082,
-                "lon": 16.3738,
-                "height": 100.5
-            },
-            "time": "2024-04-29T08:25:20.766Z",
-            "firmware": "1.0",
-            "apikey": "testapikey123"
+        "device": "test_device_123",
+        "location": {
+            "lat": 48.2082,
+            "lon": 16.3738,
+            "height": 100.5
+        },
+        "time": "2024-04-29T08:25:20.766Z",
+        "firmware": "1.0",
+        "apikey": "testapikey123"
         }
 
         sensors = {
@@ -301,15 +327,41 @@ class TestStationRouter:
     
     def test_post_station_status_success(self):
         """Test posting station status successfully"""
-        status_data = {
-            "device": "test_device_123",
-            "status": "online",
-            "time": "2024-04-29T08:25:20.766Z"
-        }
+        # Mock geocoding calls to speed up test (avoid external API calls)
+        with patch('utils.reverse_geocode') as mock_reverse_geocode, \
+             patch('utils.Nominatim') as mock_nominatim, \
+             patch('utils.tf.timezone_at') as mock_timezone:
+            # Mock reverse geocoding
+            mock_reverse_geocode.return_value = ('Vienna', 'Austria', 'at')
+            
+            # Mock geocoding for city coordinates
+            mock_geocoder = MagicMock()
+            mock_geocoder.geocode.return_value = (None, (48.2082, 16.3738))
+            mock_nominatim.return_value = mock_geocoder
+            
+            # Mock timezone finder
+            mock_timezone.return_value = 'Europe/Vienna'
+            
+            station_data = {
+                "device": "test_device_123",
+                "firmware": "1.0",
+                "apikey": "testapikey123",
+                "time": "2024-04-29T08:25:20.766Z",
+                "location": {
+                    "lat": 48.2082,
+                    "lon": 16.3738,
+                    "height": 100.5
+                }
+            }
+            status_list = [{
+                "time": "2024-04-29T08:25:20.766Z",
+                "level": 1,
+                "message": "online"
+            }]
 
-        response = client.post("/v1/station/status", json=status_data)
-        assert response.status_code == 200
-        assert response.json() == {"status": "success"}
+            response = client.post("/v1/station/status", json={"station": station_data, "status_list": status_list})
+            assert response.status_code == 200
+            assert response.json() == {"status": "success"}
     
     def test_get_all_stations_no_data(self):
         """Test getting all stations when no data exists"""
@@ -331,8 +383,8 @@ class TestStationRouter:
         lines = csv_content.strip().split('\n')
         assert len(lines) == 2  # Header + data row
         
-        # Check header
-        header = lines[0].split(',')
+        # Check header (strip \r if present)
+        header = [field.strip('\r') for field in lines[0].split(',')]
         expected_header = ["id", "last_active", "location_lat", "location_lon", "measurements_count"]
         for field in expected_header:
             assert field in header

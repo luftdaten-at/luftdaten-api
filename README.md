@@ -33,6 +33,28 @@ Rollback migrations:
     docker compose up -d
     docker compose exec app alembic upgrade head
 
+#### Running Tests
+
+Run all unit tests via Docker:
+
+    docker compose run --rm test
+
+Or use the convenience script:
+
+    ./run_tests.sh
+
+Run specific test files:
+
+    docker compose run --rm test pytest tests/test_city.py -v
+    docker compose run --rm test pytest tests/test_health.py -v
+    docker compose run --rm test pytest tests/test_station.py -v
+
+Run tests with coverage (requires pytest-cov in requirements.txt):
+
+    docker compose run --rm test pytest tests/ --cov=. --cov-report=html --cov-report=term
+
+The test service uses a separate test database (`db_test`) that is automatically set up and torn down.
+
 
 #### Deployment
 
