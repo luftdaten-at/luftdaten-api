@@ -20,7 +20,7 @@ def download_csv(url: str):
 
 # Funktion für Reverse Geocoding
 def reverse_geocode(lat, lon):
-    geolocator = Nominatim(user_agent="api.luftdaten.at")
+    geolocator = Nominatim(user_agent="api.luftdaten.at", domain="nominatim.dataplexity.eu", scheme="https")
     location = geolocator.reverse((lat, lon), exactly_one=True)
     
     if location and 'address' in location.raw:
@@ -68,7 +68,7 @@ def get_or_create_location(db: Session, lat: float, lon: float, height: float):
         try:
             timezone_str = tf.timezone_at(lng=float(lon), lat=float(lat))
 
-            clat, clon = Nominatim(user_agent="api.luftdaten.at").geocode(city_name)[1]
+            clat, clon = Nominatim(user_agent="api.luftdaten.at", domain="nominatim.dataplexity.eu", scheme="https").geocode(city_name)[1]
             city = City(name=city_name, country_id=country.id, tz=timezone_str, lat=clat, lon=clon)
             db.add(city)
             db.commit()

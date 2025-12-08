@@ -51,7 +51,7 @@ async def get_average_measurements_by_city(
         raise HTTPException(status_code=404, detail="City not found")
 
     if not all([db_city.lat, db_city.lon]):
-        lat, lon = Nominatim(user_agent="api.luftdaten.at").geocode(city_slug)[1]
+        lat, lon = Nominatim(user_agent="api.luftdaten.at", domain="nominatim.dataplexity.eu", scheme="https").geocode(city_slug)[1]
         db_city.lat = lat
         db_city.lon = lon
         db.commit()
@@ -93,7 +93,9 @@ async def get_average_measurements_by_city(
 
         b = a[(a >= l) & (a <= r)]
 
-        data.append((dim, np.mean(b), val_count, s_cnt))
+        # Only compute mean if array is not empty to avoid numpy warnings
+        if len(b) > 0:
+            data.append((dim, np.mean(b), val_count, s_cnt))
 
     j = {
         "type": "Feature",
