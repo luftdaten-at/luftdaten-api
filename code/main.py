@@ -1,6 +1,6 @@
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from routers import city_router, station_router, health_router
+from routers import city_router, station_router, health_router, statistics_router
 from routers.health import set_scheduler
 
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -48,6 +48,10 @@ app = FastAPI(
         {
             "name": "health",
             "description": "Health check endpoints to monitor API status and dependencies."
+        },
+        {
+            "name": "statistics",
+            "description": "Statistics endpoints to get database statistics and analytics."
         }
     ]
 )
@@ -111,6 +115,7 @@ async def add_version_prefix(request: Request, call_next):
 app.include_router(station_router, prefix="/station")
 app.include_router(city_router, prefix="/city")
 app.include_router(health_router, prefix="/health")
+app.include_router(statistics_router, prefix="/statistics")
 
 # Set scheduler reference for health checks
 set_scheduler(scheduler)
