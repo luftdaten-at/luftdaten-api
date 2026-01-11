@@ -8,7 +8,8 @@ ENV TZ=Europe/Vienna
 RUN apk update && apk add --no-cache \
     build-base \
     cmake \
-    netcat-openbsd
+    netcat-openbsd \
+    curl
 
 # set env variables
 ENV PYTHONDONTWRITEBYTECODE=1
