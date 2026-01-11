@@ -1,6 +1,7 @@
 import csv
 import json
 import io
+import logging
 import numpy as np
 from fastapi import APIRouter, BackgroundTasks, Depends, Response, HTTPException, Query
 from sqlalchemy.orm import Session
@@ -861,26 +862,67 @@ async def get_all_stations(
     ]
     ```
     """
-    # Abfrage aller Stationen mit zugehörigen Location und Measurements
-    stations = db.query(Station).all()
+    # Try to use materialized view first, fallback to direct queries
+    use_materialized_view = True
+    
+    try:
+        # Query from materialized view
+        stations_summary = db.execute(text("""
+            SELECT 
+                station_id,
+                device,
+                last_active,
+                location_lat,
+                location_lon,
+                location_height,
+                measurements_count
+            FROM stations_summary
+            ORDER BY device
+        """)).all()
+        
+        if stations_summary:
+            # Convert materialized view results to the expected format
+            result = []
+            for row in stations_summary:
+                station_data = {
+                    "id": row.device,
+                    "last_active": row.last_active,
+                    "location": {
+                        "lat": row.location_lat,
+                        "lon": row.location_lon
+                    },
+                    "measurements_count": row.measurements_count
+                }
+                result.append(station_data)
+        else:
+            use_materialized_view = False
+    except Exception as e:
+        # Fallback to direct queries if materialized view doesn't exist or fails
+        use_materialized_view = False
+        logging.getLogger(__name__).debug(f"Materialized view not available, using direct queries: {e}")
+    
+    # Fallback to direct queries (original implementation)
+    if not use_materialized_view:
+        # Abfrage aller Stationen mit zugehörigen Location und Measurements
+        stations = db.query(Station).all()
 
-    # Struktur für die Antwort vorbereiten
-    result = []
-    for station in stations:
-        # Zähle die Anzahl der Measurements, die mit dieser Station verknüpft sind
-        measurements_count = db.query(Measurement).filter(Measurement.station_id == station.id).count()
+        # Struktur für die Antwort vorbereiten
+        result = []
+        for station in stations:
+            # Zähle die Anzahl der Measurements, die mit dieser Station verknüpft sind
+            measurements_count = db.query(Measurement).filter(Measurement.station_id == station.id).count()
 
-        # Erstelle das Ausgabeobjekt für jede Station
-        station_data = {
-            "id": station.device,
-            "last_active": station.last_active,
-            "location": {
-                "lat": station.location.lat if station.location else None,
-                "lon": station.location.lon if station.location else None
-            },
-            "measurements_count": measurements_count
-        }
-        result.append(station_data)
+            # Erstelle das Ausgabeobjekt für jede Station
+            station_data = {
+                "id": station.device,
+                "last_active": station.last_active,
+                "location": {
+                    "lat": station.location.lat if station.location else None,
+                    "lon": station.location.lon if station.location else None
+                },
+                "measurements_count": measurements_count
+            }
+            result.append(station_data)
 
     # Rückgabe als JSON
     if output_format == "json":

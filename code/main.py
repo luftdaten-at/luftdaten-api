@@ -5,7 +5,7 @@ from routers.health import set_scheduler
 
 from apscheduler.schedulers.background import BackgroundScheduler
 import atexit
-from tasks.periodic_tasks import import_sensor_community_data, refresh_statistics_cache
+from tasks.periodic_tasks import import_sensor_community_data, refresh_statistics_cache, refresh_stations_summary_cache
 
 import os
 import logging
@@ -73,6 +73,9 @@ scheduler.add_job(import_sensor_community_data, 'interval', minutes=5)
 
 # Refresh statistics materialized views every hour
 scheduler.add_job(refresh_statistics_cache, 'interval', hours=1)
+
+# Refresh stations summary materialized view every 10 minutes
+scheduler.add_job(refresh_stations_summary_cache, 'interval', minutes=10)
 
 # Scheduler starten
 scheduler.start()
