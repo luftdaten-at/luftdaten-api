@@ -3,7 +3,7 @@ import requests
 from database import get_db
 from services.data_service import process_and_import_data, sensor_community_import_grouped_by_location
 from enums import Source
-from utils.cache import refresh_statistics_views
+from utils.cache import refresh_statistics_views, refresh_stations_summary
 
 # Logging-Konfiguration
 logging.basicConfig(level=logging.DEBUG)
@@ -70,6 +70,31 @@ def refresh_statistics_cache():
         logger.info("Statistics materialized views refreshed successfully.")
     except Exception as e:
         logger.error(f"Error refreshing statistics views: {e}")
+    finally:
+        db.close()
+        logger.debug("Database session closed.")
+
+
+def refresh_stations_summary_cache():
+    """
+    Refresh the stations_summary materialized view.
+    
+    This task should run periodically (e.g., every 10 minutes) to keep the
+    materialized view up to date for the /stations/all endpoint.
+    """
+    logger.info("Task 'refresh_stations_summary_cache' started.")
+    
+    try:
+        db = next(get_db())
+    except Exception as e:
+        logger.error(f"Failed to open database session: {e}")
+        return
+    
+    try:
+        refresh_stations_summary(db)
+        logger.info("Stations summary materialized view refreshed successfully.")
+    except Exception as e:
+        logger.error(f"Error refreshing stations summary view: {e}")
     finally:
         db.close()
         logger.debug("Database session closed.")

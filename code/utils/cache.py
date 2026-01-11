@@ -33,3 +33,27 @@ def refresh_statistics_views(db: Session):
         logger.error(f"Error refreshing statistics views: {e}")
         db.rollback()
         return False
+
+
+def refresh_stations_summary(db: Session):
+    """
+    Refresh the stations_summary materialized view concurrently.
+    
+    This function calls the PostgreSQL function to refresh the stations_summary
+    materialized view used by the /stations/all endpoint. Uses CONCURRENTLY to avoid locking tables.
+    
+    Args:
+        db: Database session
+    
+    Returns:
+        True if successful, False otherwise
+    """
+    try:
+        db.execute(text("SELECT refresh_stations_summary()"))
+        db.commit()
+        logger.info("Stations summary materialized view refreshed successfully")
+        return True
+    except Exception as e:
+        logger.error(f"Error refreshing stations summary view: {e}")
+        db.rollback()
+        return False
