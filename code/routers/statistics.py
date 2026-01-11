@@ -255,15 +255,6 @@ async def get_statistics(db: Session = Depends(get_db)):
         # If join fails (e.g., no data or missing relationships), return empty list
         top_cities_list = []
     
-    top_cities_list = [
-        {
-            "city": city,
-            "country": country,
-            "station_count": count
-        }
-        for city, country, count in top_cities
-    ]
-    
     # Sensor models distribution
     try:
         sensor_models_dist = db.query(
