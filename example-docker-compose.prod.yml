@@ -25,6 +25,12 @@ services:
       - .env
     volumes:
       - ./sensor_community_archive:/usr/src/app/sensor_community_archive
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/health/simple"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
   db:
     image: postgres:16
     networks:
@@ -33,6 +39,12 @@ services:
       - postgres_data:/var/lib/postgresql/data
     env_file:
       - .env
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-postgres} || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
   admin:
     image: dpage/pgadmin4:latest
     env_file:
