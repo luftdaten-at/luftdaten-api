@@ -152,191 +152,313 @@ async def get_statistics(db: Session = Depends(get_db)):
     seven_days_ago = now - timedelta(days=7)
     thirty_days_ago = now - timedelta(days=30)
     
-    # Total counts
-    total_countries = db.query(func.count(Country.id)).scalar() or 0
-    total_cities = db.query(func.count(City.id)).scalar() or 0
-    total_locations = db.query(func.count(Location.id)).scalar() or 0
-    total_stations = db.query(func.count(Station.id)).scalar() or 0
-    total_measurements = db.query(func.count(Measurement.id)).scalar() or 0
-    total_calibration_measurements = db.query(func.count(CalibrationMeasurement.id)).scalar() or 0
-    total_values = db.query(func.count(Values.id)).scalar() or 0
-    total_station_statuses = db.query(func.count(StationStatus.id)).scalar() or 0
+    # Try to use materialized views first, fallback to direct queries
+    use_materialized_views = True
     
-    # Active stations (last active within different timeframes)
-    # Filter out None values for last_active
-    active_stations_1h = db.query(func.count(distinct(Station.id))).filter(
-        Station.last_active.isnot(None),
-        Station.last_active >= one_hour_ago
-    ).scalar() or 0
-    
-    active_stations_24h = db.query(func.count(distinct(Station.id))).filter(
-        Station.last_active.isnot(None),
-        Station.last_active >= one_day_ago
-    ).scalar() or 0
-    
-    active_stations_7d = db.query(func.count(distinct(Station.id))).filter(
-        Station.last_active.isnot(None),
-        Station.last_active >= seven_days_ago
-    ).scalar() or 0
-    
-    active_stations_30d = db.query(func.count(distinct(Station.id))).filter(
-        Station.last_active.isnot(None),
-        Station.last_active >= thirty_days_ago
-    ).scalar() or 0
-    
-    # Data coverage (earliest and latest measurements)
-    earliest_measurement = db.query(func.min(Measurement.time_measured)).scalar()
-    latest_measurement = db.query(func.max(Measurement.time_measured)).scalar()
-    
-    # Measurements in different timeframes
-    measurements_24h = db.query(func.count(Measurement.id)).filter(
-        Measurement.time_measured >= one_day_ago
-    ).scalar() or 0
-    
-    measurements_7d = db.query(func.count(Measurement.id)).filter(
-        Measurement.time_measured >= seven_days_ago
-    ).scalar() or 0
-    
-    measurements_30d = db.query(func.count(Measurement.id)).filter(
-        Measurement.time_measured >= thirty_days_ago
-    ).scalar() or 0
-    
-    # Stations by source
-    stations_by_source = {}
-    for source_id in [Source.LD, Source.LDTTN, Source.SC]:
-        count = db.query(func.count(Station.id)).filter(
-            Station.source == source_id
-        ).scalar() or 0
-        if count > 0:
-            stations_by_source[Source.get_name(source_id)] = count
-    
-    # Stations by country
-    # Use explicit joins with proper foreign key relationships
+    # Total counts and data coverage from materialized view
     try:
-        stations_by_country = db.query(
-            Country.name,
-            func.count(distinct(Station.id)).label('station_count')
-        ).join(City, Country.id == City.country_id)\
-         .join(Location, City.id == Location.city_id)\
-         .join(Station, Location.id == Station.location_id)\
-         .group_by(Country.name)\
-         .all()
-        
+        stats_summary = db.execute(text("SELECT * FROM statistics_summary LIMIT 1")).first()
+        if stats_summary:
+            total_countries = stats_summary.total_countries or 0
+            total_cities = stats_summary.total_cities or 0
+            total_locations = stats_summary.total_locations or 0
+            total_stations = stats_summary.total_stations or 0
+            total_measurements = stats_summary.total_measurements or 0
+            total_calibration_measurements = stats_summary.total_calibration_measurements or 0
+            total_values = stats_summary.total_values or 0
+            total_station_statuses = stats_summary.total_station_statuses or 0
+            earliest_measurement = stats_summary.earliest_measurement
+            latest_measurement = stats_summary.latest_measurement
+        else:
+            use_materialized_views = False
+    except Exception:
+        use_materialized_views = False
+    
+    # Fallback to direct queries if materialized views not available
+    if not use_materialized_views:
+        total_countries = db.query(func.count(Country.id)).scalar() or 0
+        total_cities = db.query(func.count(City.id)).scalar() or 0
+        total_locations = db.query(func.count(Location.id)).scalar() or 0
+        total_stations = db.query(func.count(Station.id)).scalar() or 0
+        total_measurements = db.query(func.count(Measurement.id)).scalar() or 0
+        total_calibration_measurements = db.query(func.count(CalibrationMeasurement.id)).scalar() or 0
+        total_values = db.query(func.count(Values.id)).scalar() or 0
+        total_station_statuses = db.query(func.count(StationStatus.id)).scalar() or 0
+        earliest_measurement = db.query(func.min(Measurement.time_measured)).scalar()
+        latest_measurement = db.query(func.max(Measurement.time_measured)).scalar()
+    
+    # Active stations from materialized view
+    try:
+        active_summary = db.execute(text("SELECT * FROM active_stations_summary LIMIT 1")).first()
+        if active_summary:
+            active_stations_1h = active_summary.last_hour or 0
+            active_stations_24h = active_summary.last_24_hours or 0
+            active_stations_7d = active_summary.last_7_days or 0
+            active_stations_30d = active_summary.last_30_days or 0
+        else:
+            # Fallback to direct queries
+            active_stations_1h = db.query(func.count(distinct(Station.id))).filter(
+                Station.last_active.isnot(None),
+                Station.last_active >= one_hour_ago
+            ).scalar() or 0
+            active_stations_24h = db.query(func.count(distinct(Station.id))).filter(
+                Station.last_active.isnot(None),
+                Station.last_active >= one_day_ago
+            ).scalar() or 0
+            active_stations_7d = db.query(func.count(distinct(Station.id))).filter(
+                Station.last_active.isnot(None),
+                Station.last_active >= seven_days_ago
+            ).scalar() or 0
+            active_stations_30d = db.query(func.count(distinct(Station.id))).filter(
+                Station.last_active.isnot(None),
+                Station.last_active >= thirty_days_ago
+            ).scalar() or 0
+    except Exception:
+        # Fallback to direct queries
+        active_stations_1h = db.query(func.count(distinct(Station.id))).filter(
+            Station.last_active.isnot(None),
+            Station.last_active >= one_hour_ago
+        ).scalar() or 0
+        active_stations_24h = db.query(func.count(distinct(Station.id))).filter(
+            Station.last_active.isnot(None),
+            Station.last_active >= one_day_ago
+        ).scalar() or 0
+        active_stations_7d = db.query(func.count(distinct(Station.id))).filter(
+            Station.last_active.isnot(None),
+            Station.last_active >= seven_days_ago
+        ).scalar() or 0
+        active_stations_30d = db.query(func.count(distinct(Station.id))).filter(
+            Station.last_active.isnot(None),
+            Station.last_active >= thirty_days_ago
+        ).scalar() or 0
+    
+    # Measurements in different timeframes from materialized view
+    try:
+        measurements_summary = db.execute(text("SELECT * FROM measurements_timeframe_summary LIMIT 1")).first()
+        if measurements_summary:
+            measurements_24h = measurements_summary.last_24h or 0
+            measurements_7d = measurements_summary.last_7d or 0
+            measurements_30d = measurements_summary.last_30d or 0
+        else:
+            # Fallback to direct queries
+            measurements_24h = db.query(func.count(Measurement.id)).filter(
+                Measurement.time_measured >= one_day_ago
+            ).scalar() or 0
+            measurements_7d = db.query(func.count(Measurement.id)).filter(
+                Measurement.time_measured >= seven_days_ago
+            ).scalar() or 0
+            measurements_30d = db.query(func.count(Measurement.id)).filter(
+                Measurement.time_measured >= thirty_days_ago
+            ).scalar() or 0
+    except Exception:
+        # Fallback to direct queries
+        measurements_24h = db.query(func.count(Measurement.id)).filter(
+            Measurement.time_measured >= one_day_ago
+        ).scalar() or 0
+        measurements_7d = db.query(func.count(Measurement.id)).filter(
+            Measurement.time_measured >= seven_days_ago
+        ).scalar() or 0
+        measurements_30d = db.query(func.count(Measurement.id)).filter(
+            Measurement.time_measured >= thirty_days_ago
+        ).scalar() or 0
+    
+    # Stations by source from materialized view
+    try:
+        source_results = db.execute(text("SELECT source, count FROM stations_by_source_summary")).all()
+        stations_by_source = {}
+        for source_id, count in source_results:
+            if count > 0:
+                stations_by_source[Source.get_name(source_id)] = count
+    except Exception:
+        # Fallback to direct queries
+        stations_by_source = {}
+        for source_id in [Source.LD, Source.LDTTN, Source.SC]:
+            count = db.query(func.count(Station.id)).filter(
+                Station.source == source_id
+            ).scalar() or 0
+            if count > 0:
+                stations_by_source[Source.get_name(source_id)] = count
+    
+    # Stations by country from materialized view
+    try:
+        country_results = db.execute(text("SELECT country_name, station_count FROM stations_by_country_summary")).all()
         stations_by_country_dict = {
-            country: count for country, count in stations_by_country
+            country: count for country, count in country_results
         }
     except Exception:
-        # If join fails (e.g., no data or missing relationships), return empty dict
-        stations_by_country_dict = {}
+        # Fallback to direct queries
+        try:
+            stations_by_country = db.query(
+                Country.name,
+                func.count(distinct(Station.id)).label('station_count')
+            ).join(City, Country.id == City.country_id)\
+             .join(Location, City.id == Location.city_id)\
+             .join(Station, Location.id == Station.location_id)\
+             .group_by(Country.name)\
+             .all()
+            
+            stations_by_country_dict = {
+                country: count for country, count in stations_by_country
+            }
+        except Exception:
+            stations_by_country_dict = {}
     
-    # Top cities by station count
+    # Top cities from materialized view
     try:
-        top_cities = db.query(
-            City.name,
-            Country.name.label('country'),
-            func.count(distinct(Station.id)).label('station_count')
-        ).join(Country, City.country_id == Country.id)\
-         .join(Location, City.id == Location.city_id)\
-         .join(Station, Location.id == Station.location_id)\
-         .group_by(City.name, Country.name)\
-         .order_by(func.count(distinct(Station.id)).desc())\
-         .limit(10)\
-         .all()
-        
+        top_cities_results = db.execute(text("SELECT city_name, country_name, station_count FROM top_cities_summary")).all()
         top_cities_list = [
             {
                 "city": city,
                 "country": country,
                 "station_count": count
             }
-            for city, country, count in top_cities
+            for city, country, count in top_cities_results
         ]
     except Exception:
-        # If join fails (e.g., no data or missing relationships), return empty list
-        top_cities_list = []
+        # Fallback to direct queries
+        try:
+            top_cities = db.query(
+                City.name,
+                Country.name.label('country'),
+                func.count(distinct(Station.id)).label('station_count')
+            ).join(Country, City.country_id == Country.id)\
+             .join(Location, City.id == Location.city_id)\
+             .join(Station, Location.id == Station.location_id)\
+             .group_by(City.name, Country.name)\
+             .order_by(func.count(distinct(Station.id)).desc())\
+             .limit(10)\
+             .all()
+            
+            top_cities_list = [
+                {
+                    "city": city,
+                    "country": country,
+                    "station_count": count
+                }
+                for city, country, count in top_cities
+            ]
+        except Exception:
+            top_cities_list = []
     
-    # Sensor models distribution
+    # Sensor models distribution from materialized view
     try:
-        sensor_models_dist = db.query(
-            Measurement.sensor_model,
-            func.count(distinct(Measurement.id)).label('count')
-        ).group_by(Measurement.sensor_model).all()
-        
+        sensor_results = db.execute(text("SELECT sensor_model, count FROM sensor_models_summary")).all()
         sensor_models_dict = {}
-        for sensor_id, count in sensor_models_dist:
+        for sensor_id, count in sensor_results:
             sensor_name = SensorModel.get_sensor_name(sensor_id)
             sensor_models_dict[sensor_name] = count
     except Exception:
-        sensor_models_dict = {}
+        # Fallback to direct queries
+        try:
+            sensor_models_dist = db.query(
+                Measurement.sensor_model,
+                func.count(distinct(Measurement.id)).label('count')
+            ).group_by(Measurement.sensor_model).all()
+            
+            sensor_models_dict = {}
+            for sensor_id, count in sensor_models_dist:
+                sensor_name = SensorModel.get_sensor_name(sensor_id)
+                sensor_models_dict[sensor_name] = count
+        except Exception:
+            sensor_models_dict = {}
     
-    # Dimensions distribution
-    # Filter out NaN values: in PostgreSQL, NaN != NaN, so we filter where value = value
-    # Also filter out NULL and string 'nan'
-    dimensions_dist = db.query(
-        Values.dimension,
-        func.count(Values.id).label('count'),
-        func.avg(Values.value).label('avg_value'),
-        func.min(Values.value).label('min_value'),
-        func.max(Values.value).label('max_value')
-    ).filter(
-        Values.value.isnot(None),
-        Values.value != 'nan'
-    ).group_by(Values.dimension).all()
-    
-    dimensions_list = []
-    for dim_id, count, avg_val, min_val, max_val in dimensions_dist:
-        # Helper function to safely convert to float, handling NaN and infinity
-        def safe_float(value):
-            if value is None:
+    # Dimensions distribution from materialized view
+    # Helper function to safely convert to float, handling NaN and infinity
+    def safe_float(value):
+        if value is None:
+            return None
+        try:
+            fval = float(value)
+            # Check for NaN or infinity (these are not JSON compliant)
+            if math.isnan(fval) or math.isinf(fval):
                 return None
-            try:
-                fval = float(value)
-                # Check for NaN or infinity (these are not JSON compliant)
-                if math.isnan(fval) or math.isinf(fval):
-                    return None
-                return fval
-            except (ValueError, TypeError):
-                return None
-        
-        dimensions_list.append({
-            "dimension_id": dim_id,
-            "dimension_name": Dimension.get_name(dim_id),
-            "unit": Dimension.get_unit(dim_id),
-            "value_count": count,
-            "average_value": safe_float(avg_val),
-            "min_value": safe_float(min_val),
-            "max_value": safe_float(max_val)
-        })
+            return fval
+        except (ValueError, TypeError):
+            return None
     
-    # Sort dimensions by count
-    dimensions_list.sort(key=lambda x: x['value_count'], reverse=True)
-    
-    # Calibration measurements distribution
     try:
-        calibration_by_sensor = db.query(
-            CalibrationMeasurement.sensor_model,
-            func.count(distinct(CalibrationMeasurement.id)).label('count')
-        ).group_by(CalibrationMeasurement.sensor_model).all()
+        dimension_results = db.execute(text("SELECT dimension, value_count, avg_value, min_value, max_value FROM dimension_statistics_summary")).all()
+        dimensions_list = []
+        for dim_id, count, avg_val, min_val, max_val in dimension_results:
+            dimensions_list.append({
+                "dimension_id": dim_id,
+                "dimension_name": Dimension.get_name(dim_id),
+                "unit": Dimension.get_unit(dim_id),
+                "value_count": count,
+                "average_value": safe_float(avg_val),
+                "min_value": safe_float(min_val),
+                "max_value": safe_float(max_val)
+            })
+        # Sort dimensions by count
+        dimensions_list.sort(key=lambda x: x['value_count'], reverse=True)
+    except Exception:
+        # Fallback to direct queries
+        dimensions_dist = db.query(
+            Values.dimension,
+            func.count(Values.id).label('count'),
+            func.avg(Values.value).label('avg_value'),
+            func.min(Values.value).label('min_value'),
+            func.max(Values.value).label('max_value')
+        ).filter(
+            Values.value.isnot(None),
+            Values.value != 'nan'
+        ).group_by(Values.dimension).all()
         
+        dimensions_list = []
+        for dim_id, count, avg_val, min_val, max_val in dimensions_dist:
+            dimensions_list.append({
+                "dimension_id": dim_id,
+                "dimension_name": Dimension.get_name(dim_id),
+                "unit": Dimension.get_unit(dim_id),
+                "value_count": count,
+                "average_value": safe_float(avg_val),
+                "min_value": safe_float(min_val),
+                "max_value": safe_float(max_val)
+            })
+        # Sort dimensions by count
+        dimensions_list.sort(key=lambda x: x['value_count'], reverse=True)
+    
+    # Calibration sensors distribution from materialized view
+    try:
+        calibration_results = db.execute(text("SELECT sensor_model, count FROM calibration_sensors_summary")).all()
         calibration_sensors_dict = {}
-        for sensor_id, count in calibration_by_sensor:
+        for sensor_id, count in calibration_results:
             sensor_name = SensorModel.get_sensor_name(sensor_id)
             calibration_sensors_dict[sensor_name] = count
     except Exception:
-        calibration_sensors_dict = {}
+        # Fallback to direct queries
+        try:
+            calibration_by_sensor = db.query(
+                CalibrationMeasurement.sensor_model,
+                func.count(distinct(CalibrationMeasurement.id)).label('count')
+            ).group_by(CalibrationMeasurement.sensor_model).all()
+            
+            calibration_sensors_dict = {}
+            for sensor_id, count in calibration_by_sensor:
+                sensor_name = SensorModel.get_sensor_name(sensor_id)
+                calibration_sensors_dict[sensor_name] = count
+        except Exception:
+            calibration_sensors_dict = {}
     
-    # Station status distribution
+    # Station status distribution from materialized view
     try:
-        status_by_level = db.query(
-            StationStatus.level,
-            func.count(StationStatus.id).label('count')
-        ).group_by(StationStatus.level).all()
-        
+        status_results = db.execute(text('SELECT level, count FROM status_by_level_summary')).all()
         status_by_level_dict = {
-            f"level_{level}": count for level, count in status_by_level
+            f"level_{level}": count for level, count in status_results
         }
     except Exception:
-        status_by_level_dict = {}
+        # Fallback to direct queries
+        try:
+            status_by_level = db.query(
+                StationStatus.level,
+                func.count(StationStatus.id).label('count')
+            ).group_by(StationStatus.level).all()
+            
+            status_by_level_dict = {
+                f"level_{level}": count for level, count in status_by_level
+            }
+        except Exception:
+            status_by_level_dict = {}
     
     # Build response
     statistics = {
