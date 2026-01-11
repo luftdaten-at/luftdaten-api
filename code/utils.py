@@ -38,7 +38,6 @@ def get_or_create_location(db: Session, lat: float, lon: float, height: float):
     if location:
         # Überprüfen, ob die zugehörige Stadt und das Land vorhanden sind
         if location.city and location.country:
-            logging.debug(f"Location hat bereits Stadt ({location.city.name}) und Land ({location.country.name}).")
             return location
 
     # Reverse Geocoding durchführen (nur wenn Location nicht existiert oder Stadt/Land fehlen)

@@ -17,7 +17,39 @@ router = APIRouter()
 
 @router.get("/all", tags=["city"])
 async def get_all_cities(db: Session = Depends(get_db)):
-    # Abfrage aller Städte in der Datenbank
+    """
+    Get all cities in the database.
+    
+    Returns a list of all cities with their names, slugs, and associated country information.
+    Cities are locations where air quality monitoring stations are deployed.
+    
+    **Response:**
+    JSON object containing an array of cities:
+    - **id**: City database ID
+    - **name**: City name
+    - **slug**: URL-friendly city identifier
+    - **country**: Object containing country name and slug
+    
+    **Example Response:**
+    ```json
+    {
+      "cities": [
+        {
+          "id": 1,
+          "name": "Vienna",
+          "slug": "vienna",
+          "country": {
+            "name": "Austria",
+            "slug": "austria"
+          }
+        }
+      ]
+    }
+    ```
+    
+    **Errors:**
+    - 404: No cities found in database
+    """
     cities = db.query(City, Country).join(Country, City.country_id == Country.id).all()
 
     if not cities:
@@ -42,9 +74,78 @@ async def get_all_cities(db: Session = Depends(get_db)):
 
 @router.get("/current", tags=["city", "current"])
 async def get_average_measurements_by_city(
-    city_slug: str = Query(..., description="The name of the city to get the average measurements for."),
+    city_slug: str = Query(..., description="The slug (URL-friendly identifier) of the city to get average measurements for. Use /city/all to get available city slugs."),
     db: Session = Depends(get_db)
 ):
+    """
+    Get current average air quality measurements for a city.
+    
+    Returns aggregated air quality data for all active stations in a city.
+    Measurements are averaged from the last hour, with outlier filtering using
+    percentile-based method (alpha/2 on each side, default alpha=0.1).
+    
+    **Parameters:**
+    - **city_slug**: City slug identifier (required)
+      - Use `/city/all` endpoint to get available city slugs
+    
+    **Response Format:**
+    - GeoJSON Feature with Point geometry
+    - Properties include:
+      - **name**: City name
+      - **city_slug**: City identifier
+      - **country**: Country name
+      - **timezone**: City timezone
+      - **time**: Current time in city timezone (ISO format)
+      - **station_count**: Number of stations in the city
+      - **values**: Array of aggregated measurements:
+        - **dimension**: Dimension ID (e.g., 2=PM1.0, 3=PM2.5)
+        - **value**: Averaged value (outliers filtered)
+        - **value_count**: Number of individual values used
+        - **station_count**: Number of stations contributing
+    
+    **Data Processing:**
+    1. Only measurements from the last hour are included
+    2. NaN values are filtered out
+    3. Outliers are removed using percentile filtering (alpha=0.1)
+    4. Remaining values are averaged per dimension
+    
+    **Example Response:**
+    ```json
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [16.3738, 48.2082]
+      },
+      "properties": {
+        "name": "Vienna",
+        "city_slug": "vienna",
+        "country": "Austria",
+        "timezone": "Europe/Vienna",
+        "time": "2024-01-01T13:00:00+01:00",
+        "station_count": 5,
+        "values": [
+          {
+            "dimension": 2,
+            "value": 10.5,
+            "value_count": 15,
+            "station_count": 3
+          },
+          {
+            "dimension": 3,
+            "value": 15.2,
+            "value_count": 15,
+            "station_count": 3
+          }
+        ]
+      }
+    }
+    ```
+    
+    **Errors:**
+    - 404: City not found
+    - Note: If city coordinates are missing, they will be geocoded automatically
+    """
     db_city = db.query(City).filter(City.slug == city_slug).first()
 
     if not db_city:
@@ -119,7 +220,7 @@ async def get_average_measurements_by_city(
         }
     }
 
-    return Response(content=json.dumps(j), media_type="pplication/geo+json")
+    return Response(content=json.dumps(j), media_type="application/geo+json")
 
 
 # @router.get("/currentold", tags=["city", "current"])
