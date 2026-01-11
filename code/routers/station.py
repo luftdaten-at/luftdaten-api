@@ -23,11 +23,33 @@ router = APIRouter()
 
 @router.get('/calibration', response_class=Response, tags=['station', 'calibration'])
 async def get_calibration_data(
-    station_ids: str = None,
-    data: bool = True,
-    hours: int = 1,
+    station_ids: str = Query(None, description="Comma-separated list of station device IDs to filter by. If not provided, all stations with calibration data are returned."),
+    data: bool = Query(True, description="If True, returns calibration measurement data. If False, returns only station device IDs."),
+    hours: int = Query(1, description="Number of hours to look back for calibration measurements. Default is 1 hour."),
     db: Session = Depends(get_db)
 ):
+    """
+    Get calibration data for stations.
+    
+    Returns calibration measurements in CSV format. Calibration data is used to improve
+    measurement accuracy by comparing sensor readings against known reference values.
+    
+    **Parameters:**
+    - **station_ids**: Optional comma-separated list of station device IDs
+    - **data**: If True, returns full calibration data (device, sensor_model, dimension, value, time).
+                If False, returns only station device IDs.
+    - **hours**: Time window in hours to look back for calibration measurements
+    
+    **Response Format:**
+    - CSV format with columns: device, sensor_model, dimension, value, time_measured
+    - If data=False: CSV with single column of station device IDs
+    
+    **Example Response:**
+    ```
+    device,sensor_model,dimension,value,time_measured
+    station_123,13,3,15.5,2024-01-01T12:00:00
+    ```
+    """
     stations = db.query(Station).join(Station.calibration_measurements).all()
     if station_ids is not None:
         station_id_list = station_ids.split(",")
@@ -60,9 +82,52 @@ async def get_calibration_data(
 
 @router.get("/info", response_class=Response, tags=['station'])
 async def get_station_info(
-    station_id: str,
+    station_id: str = Query(..., description="The device ID of the station to get information for."),
     db: Session = Depends(get_db)
 ):
+    """
+    Get detailed information about a specific station.
+    
+    Returns station metadata including device ID, firmware version, location coordinates,
+    last active timestamp, and all sensor measurements from the most recent measurement time.
+    
+    **Parameters:**
+    - **station_id**: The device ID of the station (required)
+    
+    **Response:**
+    - JSON object containing:
+      - **station**: Station metadata (time, device, firmware, location)
+      - **sensors**: Dictionary of sensor measurements indexed by sensor ID, containing
+        sensor type and dimension-value pairs
+    
+    **Example Response:**
+    ```json
+    {
+      "station": {
+        "time": "2024-01-01T12:00:00",
+        "device": "station_123",
+        "firmware": "1.0",
+        "location": {
+          "lat": 48.2082,
+          "lon": 16.3738,
+          "height": 100.0
+        }
+      },
+      "sensors": {
+        "0": {
+          "type": 13,
+          "data": {
+            "2": 10.5,
+            "3": 15.2
+          }
+        }
+      }
+    }
+    ```
+    
+    **Errors:**
+    - 404: Station not found
+    """
     station = db.query(Station).filter(Station.device == station_id).first()
     if station is None:
         raise HTTPException(status_code=404, detail="Station not found")
@@ -88,12 +153,28 @@ async def get_station_info(
 
 
 # Old endpoints for compatability reason
-@router.get("/current/all", response_class=Response)
+@router.get("/current/all", response_class=Response, tags=["station", "current"], deprecated=True)
 async def get_current_station_data_all(
     db: Session = Depends(get_db),
 ):
     """
-    Returns the active stations with lat, lon, PM1, PM10 and PM2.5.
+    Get all active stations with PM measurements (legacy endpoint).
+    
+    **Deprecated**: This endpoint is maintained for backward compatibility.
+    Use `/station/current` instead for more flexible data access.
+    
+    Returns active stations (where last_active matches time_measured) with
+    latitude, longitude, and averaged PM1, PM2.5, and PM10 values.
+    
+    **Response Format:**
+    - CSV format with columns: sid, latitude, longitude, pm1, pm25, pm10
+    - Only includes stations with valid PM2.5 values within filter thresholds
+    
+    **Example Response:**
+    ```
+    sid,latitude,longitude,pm1,pm25,pm10
+    station_123,48.2082,16.3738,10.5,15.2,20.3
+    ```
     """
 
     PM2_5_LOWER_BOUND, PM2_5_UPPER_BOUND = Dimension.get_filter_threshold(Dimension.PM2_5)
@@ -130,15 +211,34 @@ async def get_current_station_data_all(
     return Response(content=csv, media_type="text/csv")
 
 
-@router.get("/history", response_class=Response)
+@router.get("/history", response_class=Response, tags=["station"], deprecated=True)
 async def get_history_station_data(
-    station_ids: str = None,
-    smooth: str = "100",
-    start: str = Query(None, description="Supply in ISO format: YYYY-MM-DDThh:mm+xx:xx. Time is optional."),
+    station_ids: str = Query(None, description="Comma-separated list of station device IDs. If not provided, all stations are included."),
+    smooth: str = Query("100", description="Smoothing parameter (currently not used, maintained for compatibility)."),
+    start: str = Query(None, description="Start time in ISO format: YYYY-MM-DDThh:mm+xx:xx. If not provided, returns all available data."),
     db: Session = Depends(get_db)
 ):
     """
-    Returns the values from a single station in a given time.
+    Get historical station data (legacy endpoint).
+    
+    **Deprecated**: This endpoint is maintained for backward compatibility.
+    Use `/station/historical` instead for more flexible historical data access.
+    
+    Returns historical PM measurements (PM1, PM2.5, PM10) for specified stations.
+    
+    **Parameters:**
+    - **station_ids**: Optional comma-separated list of station device IDs
+    - **smooth**: Smoothing parameter (not currently used)
+    - **start**: Optional start time in ISO format
+    
+    **Response Format:**
+    - CSV format with columns: timestamp, sid, latitude, longitude, pm1, pm25, pm10
+    
+    **Example Response:**
+    ```
+    timestamp,sid,latitude,longitude,pm1,pm25,pm10
+    2024-01-01T12:00:00,station_123,48.2082,16.3738,10.5,15.2,20.3
+    ```
     """
 
     # TODO: wich time zone should the user enter
@@ -189,14 +289,69 @@ async def get_history_station_data(
 # New endpoints
 @router.get("/current", response_class=Response, tags=["station", "current"])
 async def get_current_station_data(
-    station_ids: str = None,
-    last_active: int = 3600,
-    output_format: str = "geojson",
-    calibration_data: bool = Query(False, description="if true also calibration data is sent"),
+    station_ids: str = Query(None, description="Comma-separated list of station device IDs to filter by. If not provided, all active stations are returned."),
+    last_active: int = Query(3600, description="Time window in seconds. Stations with last_active within this window are considered active. Default is 3600 seconds (1 hour)."),
+    output_format: str = Query("geojson", description="Output format: 'geojson' or 'csv'. Default is 'geojson'."),
+    calibration_data: bool = Query(False, description="If true, includes calibration sensor data in the response."),
     db: Session = Depends(get_db)
 ):
     """
-    Returns the latest data of active stations.
+    Get current measurement data from active stations.
+    
+    Returns the latest measurement data from stations that have been active within
+    the specified time window. Data includes sensor measurements with dimensions
+    and values for each sensor model.
+    
+    **Parameters:**
+    - **station_ids**: Optional comma-separated list of station device IDs to filter
+    - **last_active**: Time window in seconds (default: 3600 = 1 hour)
+    - **output_format**: 'geojson' (default) or 'csv'
+    - **calibration_data**: If true, includes calibration measurements
+    
+    **Response Formats:**
+    
+    **GeoJSON** (default):
+    - FeatureCollection with Point geometries
+    - Each feature contains station properties: device, time, height, sensors
+    - Sensors array contains sensor_model and values (dimension-value pairs)
+    
+    **CSV**:
+    - Columns: device, lat, lon, last_active, height, sensor_model, dimension, value
+    - If calibration_data=true: additional 'calibration' column (true/false)
+    
+    **Example GeoJSON Response:**
+    ```json
+    {
+      "type": "FeatureCollection",
+      "features": [
+        {
+          "type": "Feature",
+          "geometry": {
+            "type": "Point",
+            "coordinates": [16.3738, 48.2082]
+          },
+          "properties": {
+            "device": "station_123",
+            "time": "2024-01-01T12:00:00",
+            "height": 100.0,
+            "sensors": [
+              {
+                "sensor_model": 13,
+                "values": [
+                  {"dimension": 2, "value": 10.5},
+                  {"dimension": 3, "value": 15.2}
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    }
+    ```
+    
+    **Errors:**
+    - 404: No stations found matching the criteria
+    - 400: Invalid output format
     """
 
     time_threshold = datetime.now(tz=ZoneInfo("Europe/Vienna")) - timedelta(seconds=last_active)
@@ -306,6 +461,30 @@ async def create_station_status(
     status_list: list[StationStatusCreate],
     db: Session = Depends(get_db)
 ):
+    """
+    Submit station status updates.
+    
+    Creates or updates a station and records status messages. Status messages
+    can indicate station health, connectivity, or operational state.
+    
+    **Request Body:**
+    - **station**: Station metadata (device, firmware, apikey, time, location)
+    - **status_list**: Array of status messages, each containing:
+      - **time**: Timestamp of the status
+      - **level**: Status level (integer, typically 1=info, 2=warning, 3=error)
+      - **message**: Status message text
+    
+    **Response:**
+    ```json
+    {
+      "status": "success"
+    }
+    ```
+    
+    **Errors:**
+    - 401: Invalid API key (if station exists with different API key)
+    - 422: Validation error
+    """
 
     db_station = get_or_create_station(
         db=db,
@@ -332,6 +511,37 @@ async def create_station_data(
     sensors: SensorsCreate,
     db: Session = Depends(get_db)
 ):
+    """
+    Submit measurement data from a station.
+    
+    Creates or updates a station and records sensor measurements. If the station
+    doesn't exist, it will be created. Measurements are linked to the station
+    and location.
+    
+    **Request Body:**
+    - **station**: Station metadata including:
+      - **device**: Station device ID (unique identifier)
+      - **firmware**: Firmware version
+      - **apikey**: API key for authentication
+      - **time**: Measurement timestamp
+      - **location**: Geographic location (lat, lon, height)
+      - **source**: Data source (1=Luftdaten.at, 2=TTN LoRaWAN, 3=sensor.community)
+      - **calibration_mode**: If true, stores as calibration measurements
+    - **sensors**: Dictionary mapping sensor IDs to sensor data:
+      - **type**: Sensor model ID (e.g., 13 for SDS011)
+      - **data**: Dictionary mapping dimension IDs to values (e.g., {2: 10.5, 3: 15.2})
+    
+    **Response:**
+    ```json
+    {
+      "status": "success"
+    }
+    ```
+    
+    **Errors:**
+    - 401: Invalid API key (if station exists with different API key)
+    - 422: Measurement already exists in database (duplicate time_measured + sensor_model)
+    """
 
     MeasurementClass = Measurement
 
@@ -400,12 +610,41 @@ async def create_station_data(
 
 @router.get("/topn", response_class=Response, tags=["station"])
 async def get_topn_stations_by_dim(
-    n: int = Query(..., description="limit"),
-    dimension: int = Query(..., description="Dimension ID to compare"),
-    order: Order = Query(Order.MIN, description="Get (Min/Max) n stations"),
-    output_format: OutputFormat = Query(OutputFormat.CSV, description="Ouput format"),
+    n: int = Query(..., description="Number of stations to return (limit).", ge=1),
+    dimension: int = Query(..., description="Dimension ID to compare (e.g., 2=PM1.0, 3=PM2.5, 5=PM10)."),
+    order: Order = Query(Order.MIN, description="Order by minimum ('min') or maximum ('max') value."),
+    output_format: OutputFormat = Query(OutputFormat.CSV, description="Output format: 'csv' or 'json'. Default is 'csv'."),
     db: Session = Depends(get_db)
 ):
+    """
+    Get top N stations by dimension value.
+    
+    Returns the stations with the highest or lowest values for a specific dimension
+    (e.g., PM2.5, temperature). Only includes active stations (where last_active
+    matches time_measured) and applies dimension-specific filter thresholds.
+    
+    **Parameters:**
+    - **n**: Number of stations to return (required, minimum 1)
+    - **dimension**: Dimension ID to compare (required)
+      - Common dimensions: 2=PM1.0, 3=PM2.5, 5=PM10, 7=Temperature
+    - **order**: 'min' to get lowest values, 'max' to get highest values (default: 'min')
+    - **output_format**: 'csv' or 'json' (default: 'csv')
+    
+    **Response Formats:**
+    
+    **CSV** (default):
+    - Columns: device, time_measured, dimension, value
+    
+    **JSON**:
+    - Array of objects with device, time_measured, dimension, value, and optional location
+    
+    **Example CSV Response:**
+    ```
+    device,time_measured,dimension,value
+    station_123,2024-01-01T12:00,3,15.2
+    station_456,2024-01-01T12:00,3,18.5
+    ```
+    """
 
     LOWER_BOUND, UPPER_BOUND = Dimension.get_filter_threshold(dimension)
 
@@ -437,15 +676,69 @@ async def get_topn_stations_by_dim(
 
 @router.get("/historical", response_class=Response, tags=["station"])
 async def get_historical_station_data(
-    station_ids: str = Query("", description="Comma-separated list of station devices"),
-    start: str = Query(None, description="Supply in ISO format: YYYY-MM-DDThh:mm+xx:xx. Time is optional."),
-    end: str = Query(None, description="Supply in ISO format: YYYY-MM-DDThh:mm+xx:xx. Time is optional. If end == 'current' only last measurement is taken."),
-    precision: Precision = Query(Precision.MAX, description="Precision of data points"),
-    city_slugs: str = Query(None, description="Comma-seperated list of city_slugs"),
-    output_format: OutputFormat = Query(OutputFormat.CSV, description="Ouput format"),
-    include_location: bool = Query(False, description="If True location of stations is included."),
+    station_ids: str = Query("", description="Comma-separated list of station device IDs. Empty string returns all stations."),
+    start: str = Query(None, description="Start time in ISO format: YYYY-MM-DDThh:mm+xx:xx. If not provided, returns all available data."),
+    end: str = Query(None, description="End time in ISO format: YYYY-MM-DDThh:mm+xx:xx, or 'current' for latest measurements. If not provided, returns all available data."),
+    precision: Precision = Query(Precision.MAX, description="Time precision for aggregation: 'all' (max), 'hour', 'day', 'week', 'month', 'year'. Default is 'all'."),
+    city_slugs: str = Query(None, description="Comma-separated list of city slugs to filter by. If not provided, all cities are included."),
+    output_format: OutputFormat = Query(OutputFormat.CSV, description="Output format: 'csv' or 'json'. Default is 'csv'."),
+    include_location: bool = Query(False, description="If True, includes location coordinates in JSON response (only applies to JSON format)."),
     db: Session = Depends(get_db)
 ):
+    """
+    Get historical measurement data with time aggregation.
+    
+    Returns aggregated measurement data over a time range with optional filtering
+    by stations, cities, and time precision. When end='current', returns only the
+    most recent measurements with outlier filtering applied.
+    
+    **Parameters:**
+    - **station_ids**: Comma-separated station device IDs (empty = all stations)
+    - **start**: Start time in ISO format (optional)
+    - **end**: End time in ISO format, or 'current' for latest measurements (optional)
+    - **precision**: Time aggregation precision:
+      - 'all': No aggregation (maximum precision)
+      - 'hour': Aggregate by hour
+      - 'day': Aggregate by day
+      - 'week': Aggregate by week
+      - 'month': Aggregate by month
+      - 'year': Aggregate by year
+    - **city_slugs**: Comma-separated city slugs to filter by (optional)
+    - **output_format**: 'csv' or 'json' (default: 'csv')
+    - **include_location**: Include location in JSON response (default: False)
+    
+    **Special Behavior:**
+    - When end='current': Returns only measurements from the last 20 minutes,
+      applies outlier filtering using percentile-based method (0.5% on each side)
+    
+    **Response Formats:**
+    
+    **CSV** (default):
+    - Columns: device, time_measured, dimension, value
+    - Time format depends on precision setting
+    
+    **JSON**:
+    - Array of objects grouped by device and time
+    - Each object contains device, time_measured, values array
+    - If include_location=true: adds location object with lat, lon, height
+    
+    **Example JSON Response:**
+    ```json
+    [
+      {
+        "device": "station_123",
+        "time_measured": "2024-01-01T12:00",
+        "values": [
+          {"dimension": 2, "value": 10.5},
+          {"dimension": 3, "value": 15.2}
+        ]
+      }
+    ]
+    ```
+    
+    **Errors:**
+    - 400: Invalid date format
+    """
     # Konvertiere die Liste von station_devices in eine Liste
     devices = station_ids.split(",") if station_ids else []
     cities = city_slugs.split(",") if city_slugs else [] 
@@ -528,11 +821,45 @@ group by s.id, s.device, m.time_measured, v.dimension;""")).all()
 
 @router.get("/all", response_class=Response, tags=["station"])
 async def get_all_stations(
-    output_format: str = Query(default="csv", enum=["json", "csv"]),
+    output_format: str = Query(default="csv", enum=["json", "csv"], description="Output format: 'csv' or 'json'. Default is 'csv'."),
     db: Session = Depends(get_db)
 ):
     """
-    Return all registered stations with their locations and number of measurements.
+    Get all registered stations with metadata.
+    
+    Returns a list of all stations in the database with their device IDs, last active
+    timestamps, location coordinates, and measurement counts.
+    
+    **Parameters:**
+    - **output_format**: 'csv' or 'json' (default: 'csv')
+    
+    **Response Formats:**
+    
+    **CSV** (default):
+    - Columns: id, last_active, location_lat, location_lon, measurements_count
+    - Includes Content-Disposition header for file download
+    
+    **JSON**:
+    - Array of station objects with:
+      - **id**: Station device ID
+      - **last_active**: ISO format timestamp
+      - **location**: Object with lat, lon (may be None)
+      - **measurements_count**: Number of measurements for this station
+    
+    **Example JSON Response:**
+    ```json
+    [
+      {
+        "id": "station_123",
+        "last_active": "2024-01-01T12:00:00",
+        "location": {
+          "lat": 48.2082,
+          "lon": 16.3738
+        },
+        "measurements_count": 1500
+      }
+    ]
+    ```
     """
     # Abfrage aller Stationen mit zugehörigen Location und Measurements
     stations = db.query(Station).all()

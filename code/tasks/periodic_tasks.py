@@ -3,6 +3,7 @@ import requests
 from database import get_db
 from services.data_service import process_and_import_data, sensor_community_import_grouped_by_location
 from enums import Source
+from utils.cache import refresh_statistics_views
 
 # Logging-Konfiguration
 logging.basicConfig(level=logging.DEBUG)
@@ -47,3 +48,28 @@ def import_sensor_community_data():
             logger.debug("Database session closed.")
     else:
         logger.error(f"Failed to fetch data: Status Code {response.status_code}")
+
+
+def refresh_statistics_cache():
+    """
+    Refresh all statistics materialized views.
+    
+    This task should run periodically (e.g., every hour) to keep the
+    materialized views up to date for the /statistics endpoint.
+    """
+    logger.info("Task 'refresh_statistics_cache' started.")
+    
+    try:
+        db = next(get_db())
+    except Exception as e:
+        logger.error(f"Failed to open database session: {e}")
+        return
+    
+    try:
+        refresh_statistics_views(db)
+        logger.info("Statistics materialized views refreshed successfully.")
+    except Exception as e:
+        logger.error(f"Error refreshing statistics views: {e}")
+    finally:
+        db.close()
+        logger.debug("Database session closed.")

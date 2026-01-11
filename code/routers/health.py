@@ -17,7 +17,58 @@ def set_scheduler(sched: BackgroundScheduler):
 @router.get("/", tags=["health"])
 async def health_check():
     """
-    Health check endpoint to verify the API status, database connectivity, and scheduler status.
+    Comprehensive health check endpoint.
+    
+    Checks the status of the API, database connectivity, and background scheduler.
+    Returns detailed information about each component's health status.
+    
+    **Response:**
+    JSON object containing:
+    - **status**: Overall status ('healthy' or 'unhealthy')
+    - **timestamp**: Current UTC timestamp (ISO format)
+    - **version**: API version
+    - **checks**: Object with individual component statuses:
+      - **api**: Always 'healthy' if endpoint is reachable
+      - **database**: 'healthy' if connection successful, 'unhealthy' otherwise
+      - **scheduler**: 'healthy' if scheduler is running, 'unhealthy' otherwise
+    - **scheduler_jobs**: Number of scheduled jobs (if scheduler is healthy)
+    - **database_error**: Error message if database check failed (optional)
+    - **scheduler_error**: Error message if scheduler check failed (optional)
+    
+    **Example Healthy Response:**
+    ```json
+    {
+      "status": "healthy",
+      "timestamp": "2024-01-01T12:00:00Z",
+      "version": "0.3",
+      "checks": {
+        "api": "healthy",
+        "database": "healthy",
+        "scheduler": "healthy"
+      },
+      "scheduler_jobs": 1
+    }
+    ```
+    
+    **Example Unhealthy Response:**
+    ```json
+    {
+      "status": "unhealthy",
+      "timestamp": "2024-01-01T12:00:00Z",
+      "version": "0.3",
+      "checks": {
+        "api": "healthy",
+        "database": "unhealthy",
+        "scheduler": "healthy"
+      },
+      "scheduler_jobs": 1,
+      "database_error": "Connection refused"
+    }
+    ```
+    
+    **HTTP Status Codes:**
+    - 200: All systems healthy
+    - 503: One or more systems unhealthy (Service Unavailable)
     """
     health_status = {
         "status": "healthy",
@@ -63,7 +114,29 @@ async def health_check():
 @router.get("/simple", tags=["health"])
 async def simple_health_check():
     """
-    Simple health check endpoint that only checks if the API is running.
+    Simple health check endpoint.
+    
+    Lightweight endpoint that only verifies the API is running and responding.
+    Does not check database or scheduler status. Useful for load balancers and
+    monitoring systems that need fast response times.
+    
+    **Response:**
+    JSON object containing:
+    - **status**: Always 'healthy' if endpoint is reachable
+    - **timestamp**: Current UTC timestamp (ISO format)
+    - **version**: API version
+    
+    **Example Response:**
+    ```json
+    {
+      "status": "healthy",
+      "timestamp": "2024-01-01T12:00:00Z",
+      "version": "0.3"
+    }
+    ```
+    
+    **HTTP Status Code:**
+    - 200: API is running (always returns this if endpoint is reachable)
     """
     return {
         "status": "healthy",
