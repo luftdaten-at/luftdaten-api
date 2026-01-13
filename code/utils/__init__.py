@@ -17,6 +17,7 @@ from .formatters import standard_output_to_csv, standard_output_to_json
 from .http import download_csv
 from .helpers import float_default
 from .cache import refresh_statistics_views, refresh_stations_summary
+from .response_cache import get_cities_cache, get_stations_cache
 
 __all__ = [
     'reverse_geocode',
@@ -28,4 +29,6 @@ __all__ = [
     'float_default',
     'refresh_statistics_views',
     'refresh_stations_summary',
+    'get_cities_cache',
+    'get_stations_cache',
 ]

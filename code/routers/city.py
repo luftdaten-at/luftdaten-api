@@ -1,4 +1,5 @@
 import json
+import logging
 import numpy as np
 from geopy.geocoders import Nominatim
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
@@ -10,6 +11,7 @@ from zoneinfo import ZoneInfo
 
 from models import City, Country, Station, Measurement, Values, Location
 from enums import Dimension
+from utils.response_cache import get_cities_cache
 
 
 router = APIRouter()
@@ -20,7 +22,7 @@ async def get_all_cities(db: Session = Depends(get_db)):
     """
     Get all cities in the database.
     
-    Returns a list of all cities with their names, slugs, and associated country information.
+    Returns a list of all cities with their names, slugs, location coordinates, and associated country information.
     Cities are locations where air quality monitoring stations are deployed.
     
     **Response:**
@@ -28,6 +30,9 @@ async def get_all_cities(db: Session = Depends(get_db)):
     - **id**: City database ID
     - **name**: City name
     - **slug**: URL-friendly city identifier
+    - **location**: Object containing latitude and longitude coordinates (may be None if not set)
+      - **latitude**: City latitude coordinate
+      - **longitude**: City longitude coordinate
     - **country**: Object containing country name and slug
     
     **Example Response:**
@@ -38,6 +43,10 @@ async def get_all_cities(db: Session = Depends(get_db)):
           "id": 1,
           "name": "Vienna",
           "slug": "vienna",
+          "location": {
+            "latitude": 48.2082,
+            "longitude": 16.3738
+          },
           "country": {
             "name": "Austria",
             "slug": "austria"
@@ -50,6 +59,18 @@ async def get_all_cities(db: Session = Depends(get_db)):
     **Errors:**
     - 404: No cities found in database
     """
+    # Check cache first
+    cache = get_cities_cache()
+    cache_key = "cities_all"
+    cached_response = cache.get(cache_key)
+    
+    if cached_response:
+        logging.getLogger(__name__).debug(f"Cache hit for {cache_key}")
+        return Response(content=cached_response, media_type="application/json")
+    
+    # Cache miss - fetch from database
+    logging.getLogger(__name__).debug(f"Cache miss for {cache_key}")
+    
     cities = db.query(City, Country).join(Country, City.country_id == Country.id).all()
 
     if not cities:
@@ -61,6 +82,10 @@ async def get_all_cities(db: Session = Depends(get_db)):
                 "id": city.id,
                 "name": city.name,
                 "slug": city.slug,
+                "location": {
+                    "latitude": city.lat,
+                    "longitude": city.lon
+                } if city.lat is not None and city.lon is not None else None,
                 "country": {
                     "name": country.name,
                     "slug": country.slug
@@ -69,7 +94,12 @@ async def get_all_cities(db: Session = Depends(get_db)):
             for city, country in cities
         ]
     }
-    return response
+    
+    # Serialize and cache the response
+    response_content = json.dumps(response).encode('utf-8')
+    cache.set(cache_key, response_content)
+    
+    return Response(content=response_content, media_type="application/json")
 
 
 @router.get("/current", tags=["city", "current"])
@@ -156,6 +186,10 @@ async def get_average_measurements_by_city(
         db_city.lat = lat
         db_city.lon = lon
         db.commit()
+        
+        # Invalidate cities cache after coordinates are added
+        cache = get_cities_cache()
+        cache.invalidate("cities_all")
     
 
     # only select the measurements from the last hour

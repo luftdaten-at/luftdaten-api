@@ -10,6 +10,7 @@ from timezonefinder import TimezoneFinder
 from sqlalchemy.orm import Session
 from models import City, Country, Location
 import logging
+from .response_cache import get_cities_cache
 
 # Initialize TimezoneFinder
 tf = TimezoneFinder()
@@ -99,6 +100,10 @@ def get_or_create_location(db: Session, lat: float, lon: float, height: float):
             db.commit()
             db.refresh(city)
             logging.debug(f"Neue Stadt erstellt: {city}")
+            
+            # Invalidate cities cache after new city is created
+            cache = get_cities_cache()
+            cache.invalidate("cities_all")
         except Exception as e:
             logging.error(f"Fehler beim Erstellen der Stadt '{city_name}': {e}")
             db.rollback()
