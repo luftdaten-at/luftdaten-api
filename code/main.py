@@ -2,6 +2,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from routers import city_router, station_router, health_router, statistics_router
 from routers.health import set_scheduler
+from utils.blacklist import load_blacklist_from_file
 
 from apscheduler.schedulers.background import BackgroundScheduler
 import atexit
@@ -107,6 +108,16 @@ def shutdown_scheduler():
         pass
 
 atexit.register(shutdown_scheduler)
+
+
+@app.on_event("startup")
+def load_station_blacklist():
+    """Load station blacklist from config file into app state."""
+    try:
+        app.state.blacklisted_station_ids = load_blacklist_from_file()
+    except Exception as e:
+        logging.getLogger(__name__).error("Failed to load station blacklist: %s", e)
+        app.state.blacklisted_station_ids = frozenset()
 
 
 # Middleware to add /v1 prefix to all routes

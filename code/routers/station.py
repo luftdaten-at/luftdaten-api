@@ -4,6 +4,7 @@ import io
 import logging
 import numpy as np
 from fastapi import APIRouter, BackgroundTasks, Depends, Response, HTTPException, Query
+from dependencies import get_blacklist
 from sqlalchemy.orm import Session
 from sqlalchemy import func, or_, text, case
 from datetime import datetime, timedelta, timezone
@@ -27,7 +28,8 @@ async def get_calibration_data(
     station_ids: str = Query(None, description="Comma-separated list of station device IDs to filter by. If not provided, all stations with calibration data are returned."),
     data: bool = Query(True, description="If True, returns calibration measurement data. If False, returns only station device IDs."),
     hours: int = Query(1, description="Number of hours to look back for calibration measurements. Default is 1 hour."),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    blacklist: frozenset[str] = Depends(get_blacklist)
 ):
     """
     Get calibration data for stations.
@@ -53,8 +55,10 @@ async def get_calibration_data(
     """
     stations = db.query(Station).join(Station.calibration_measurements).all()
     if station_ids is not None:
-        station_id_list = station_ids.split(",")
+        station_id_list = [s.strip() for s in station_ids.split(",") if s.strip()]
         stations = db.query(Station).filter(Station.device.in_(station_id_list)).all()
+    if blacklist:
+        stations = [s for s in stations if s.device not in blacklist]
     # csv
     # device id, sensor.model, dimension, value, time
     csv = []
@@ -84,7 +88,8 @@ async def get_calibration_data(
 @router.get("/info", response_class=Response, tags=['station'])
 async def get_station_info(
     station_id: str = Query(..., description="The device ID of the station to get information for."),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    blacklist: frozenset[str] = Depends(get_blacklist)
 ):
     """
     Get detailed information about a specific station.
@@ -129,6 +134,8 @@ async def get_station_info(
     **Errors:**
     - 404: Station not found
     """
+    if station_id in blacklist:
+        raise HTTPException(status_code=404, detail="Station not found")
     station = db.query(Station).filter(Station.device == station_id).first()
     if station is None:
         raise HTTPException(status_code=404, detail="Station not found")
@@ -157,6 +164,7 @@ async def get_station_info(
 @router.get("/current/all", response_class=Response, tags=["station", "current"], deprecated=True)
 async def get_current_station_data_all(
     db: Session = Depends(get_db),
+    blacklist: frozenset[str] = Depends(get_blacklist),
 ):
     """
     Get all active stations with PM measurements (legacy endpoint).
@@ -205,6 +213,8 @@ async def get_current_station_data_all(
         .having(func.avg(case((Values.dimension == Dimension.PM2_5, Values.value))) < PM2_5_UPPER_BOUND)
         .order_by(Measurement.time_measured)
     )
+    if blacklist:
+        q = q.filter(~Station.device.in_(blacklist))
 
     csv = "sid,latitude,longitude,pm1,pm25,pm10\n"
     csv += "\n".join(",".join([str(y) for y in x]) for x in q.all())
@@ -217,7 +227,8 @@ async def get_history_station_data(
     station_ids: str = Query(None, description="Comma-separated list of station device IDs. If not provided, all stations are included."),
     smooth: str = Query("100", description="Smoothing parameter (currently not used, maintained for compatibility)."),
     start: str = Query(None, description="Start time in ISO format: YYYY-MM-DDThh:mm+xx:xx. If not provided, returns all available data."),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    blacklist: frozenset[str] = Depends(get_blacklist),
 ):
     """
     Get historical station data (legacy endpoint).
@@ -275,6 +286,8 @@ async def get_history_station_data(
 
     if station_ids:
         q = q.filter(Station.device.in_(station_ids))
+    if blacklist:
+        q = q.filter(~Station.device.in_(blacklist))
 
     if start_time:
         q = q.filter(Measurement.time_measured >= start_time)
@@ -294,7 +307,8 @@ async def get_current_station_data(
     last_active: int = Query(3600, description="Time window in seconds. Stations with last_active within this window are considered active. Default is 3600 seconds (1 hour)."),
     output_format: str = Query("geojson", description="Output format: 'geojson' or 'csv'. Default is 'geojson'."),
     calibration_data: bool = Query(False, description="If true, includes calibration sensor data in the response."),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    blacklist: frozenset[str] = Depends(get_blacklist)
 ):
     """
     Get current measurement data from active stations.
@@ -358,11 +372,13 @@ async def get_current_station_data(
     time_threshold = datetime.now(tz=ZoneInfo("Europe/Vienna")) - timedelta(seconds=last_active)
 
     if station_ids:
-        station_id_list = station_ids.split(",")
-        stations = db.query(Station).join(Location).filter(Station.device.in_(station_id_list)).all()
+        station_id_list = [s.strip() for s in station_ids.split(",") if s.strip()]
+        station_id_list = [s for s in station_id_list if s not in blacklist]
+        stations = db.query(Station).join(Location).filter(Station.device.in_(station_id_list)).all() if station_id_list else []
     else:
         stations = db.query(Station).join(Location).filter(Station.last_active >= time_threshold).all()
-
+    if blacklist:
+        stations = [s for s in stations if s.device not in blacklist]
     if not stations:
         raise HTTPException(status_code=404, detail="No stations found")
 
@@ -615,7 +631,8 @@ async def get_topn_stations_by_dim(
     dimension: int = Query(..., description="Dimension ID to compare (e.g., 2=PM1.0, 3=PM2.5, 5=PM10)."),
     order: Order = Query(Order.MIN, description="Order by minimum ('min') or maximum ('max') value."),
     output_format: OutputFormat = Query(OutputFormat.CSV, description="Output format: 'csv' or 'json'. Default is 'csv'."),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    blacklist: frozenset[str] = Depends(get_blacklist)
 ):
     """
     Get top N stations by dimension value.
@@ -668,6 +685,8 @@ async def get_topn_stations_by_dim(
         .order_by(compare)
         .limit(n)
     )
+    if blacklist:
+        q = q.filter(~Station.device.in_(blacklist))
 
     if output_format == 'csv':
         return Response(content=standard_output_to_csv(q.all()), media_type="text/csv")
@@ -684,7 +703,8 @@ async def get_historical_station_data(
     city_slugs: str = Query(None, description="Comma-separated list of city slugs to filter by. If not provided, all cities are included."),
     output_format: OutputFormat = Query(OutputFormat.CSV, description="Output format: 'csv' or 'json'. Default is 'csv'."),
     include_location: bool = Query(False, description="If True, includes location coordinates in JSON response (only applies to JSON format)."),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    blacklist: frozenset[str] = Depends(get_blacklist)
 ):
     """
     Get historical measurement data with time aggregation.
@@ -771,6 +791,8 @@ async def get_historical_station_data(
         .group_by(Measurement.station_id, Station.device, truncated_time, Values.dimension)
         .order_by(Measurement.station_id, Station.device, truncated_time, Values.dimension)
     )
+    if blacklist:
+        q = q.filter(~Station.device.in_(blacklist))
     data_list = []
     if end == "current":
         start = datetime.now(tz=timezone.utc) - timedelta(minutes=CURRENT_TIME_RANGE_MINUTES)
@@ -778,11 +800,16 @@ async def get_historical_station_data(
         #q = q.filter(truncated_time >= Station.last_active)
         #data = q.all()
 
-        data = db.execute(text("""select s.device, m.time_measured, v.dimension, avg(v.value) from stations as s 
+        sql = """select s.device, m.time_measured, v.dimension, avg(v.value) from stations as s 
 inner join measurements m on m.station_id = s.id
 inner join values v on v.measurement_id = m.id
-where s.last_active = m.time_measured
-group by s.id, s.device, m.time_measured, v.dimension;""")).all()
+where s.last_active = m.time_measured"""
+        if blacklist:
+            placeholders = ", ".join(f":b{i}" for i in range(len(blacklist)))
+            sql += f" AND s.device NOT IN ({placeholders})"
+        sql += " group by s.id, s.device, m.time_measured, v.dimension;"
+        params = dict(zip([f"b{i}" for i in range(len(blacklist))], blacklist)) if blacklist else {}
+        data = db.execute(text(sql), params).all()
 
         # filter outlier
         dim_group = defaultdict(list)
@@ -823,7 +850,8 @@ group by s.id, s.device, m.time_measured, v.dimension;""")).all()
 @router.get("/all", response_class=Response, tags=["station"])
 async def get_all_stations(
     output_format: str = Query(default="csv", enum=["json", "csv"], description="Output format: 'csv' or 'json'. Default is 'csv'."),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    blacklist: frozenset[str] = Depends(get_blacklist)
 ):
     """
     Get all registered stations with metadata.
@@ -884,6 +912,8 @@ async def get_all_stations(
             # Convert materialized view results to the expected format
             result = []
             for row in stations_summary:
+                if blacklist and row.device in blacklist:
+                    continue
                 station_data = {
                     "id": row.device,
                     "last_active": row.last_active,
@@ -904,7 +934,10 @@ async def get_all_stations(
     # Fallback to direct queries (original implementation)
     if not use_materialized_view:
         # Abfrage aller Stationen mit zugehörigen Location und Measurements
-        stations = db.query(Station).all()
+        stations_query = db.query(Station)
+        if blacklist:
+            stations_query = stations_query.filter(~Station.device.in_(blacklist))
+        stations = stations_query.all()
 
         # Struktur für die Antwort vorbereiten
         result = []
