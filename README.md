@@ -55,6 +55,25 @@ Run tests with coverage (requires pytest-cov in requirements.txt):
 
 The test service uses a separate test database (`db_test`) that is automatically set up and torn down.
 
+#### Station blacklist
+
+Stations can be excluded from API responses via a blacklist config file. Blacklisted stations are omitted from all station, city, and statistics endpoints.
+
+**Location:** `config/station_blacklist.json`
+
+**Format:** JSON array of device IDs, e.g.:
+```json
+["12345", "67890"]
+```
+
+**Editing:** Add or remove device IDs, save the file, then restart the app. With Docker Compose, the `config/` folder is mounted, so changes take effect after `docker compose restart app`.
+
+**Environment variable:** `STATION_BLACKLIST_FILE` — override the blacklist file path (e.g. `/app/config/station_blacklist.json` in Docker).
+
+**Behavior:**
+- Missing file or empty array → no stations excluded
+- Invalid JSON → startup fails
+- Blacklisted stations return 404 on `/station/info`; they are filtered from all other endpoints
 
 #### Deployment
 

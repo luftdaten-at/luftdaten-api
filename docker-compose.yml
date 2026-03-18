@@ -6,6 +6,7 @@ services:
       - "80:80"
     volumes:
       - ./code:/usr/src/app
+      - ./config:/usr/src/config
     depends_on:
       - db
     env_file:

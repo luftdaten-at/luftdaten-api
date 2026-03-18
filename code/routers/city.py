@@ -3,6 +3,7 @@ import logging
 import numpy as np
 from geopy.geocoders import Nominatim
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from dependencies import get_blacklist
 from sqlalchemy.orm import Session
 from database import get_db
 from sqlalchemy import func, or_, distinct, and_
@@ -105,7 +106,8 @@ async def get_all_cities(db: Session = Depends(get_db)):
 @router.get("/current", tags=["city", "current"])
 async def get_average_measurements_by_city(
     city_slug: str = Query(..., description="The slug (URL-friendly identifier) of the city to get average measurements for. Use /city/all to get available city slugs."),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    blacklist: frozenset[str] = Depends(get_blacklist),
 ):
     """
     Get current average air quality measurements for a city.
@@ -213,10 +215,13 @@ async def get_average_measurements_by_city(
         .filter(Measurement.time_measured >= start)
         .group_by(Values.dimension)
     )
+    if blacklist:
+        q = q.filter(~Station.device.in_(blacklist))
 
-    print(len(q.all()))
-
-    station_count = db.query(Station).join(Location).join(City).filter(City.slug == city_slug).count()
+    station_count_query = db.query(Station).join(Location).join(City).filter(City.slug == city_slug)
+    if blacklist:
+        station_count_query = station_count_query.filter(~Station.device.in_(blacklist))
+    station_count = station_count_query.count()
 
     # filter outlier with Quartiles
     data = []

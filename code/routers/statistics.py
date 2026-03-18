@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from sqlalchemy import func, distinct, and_, text
 from database import get_db
+from dependencies import get_blacklist
 from datetime import datetime, timezone, timedelta
 import math
 from models import (
@@ -14,7 +15,10 @@ router = APIRouter()
 
 
 @router.get("/", tags=["statistics"])
-async def get_statistics(db: Session = Depends(get_db)):
+async def get_statistics(
+    db: Session = Depends(get_db),
+    blacklist: frozenset[str] = Depends(get_blacklist),
+):
     """
     Get comprehensive database statistics and analytics.
     
@@ -153,10 +157,13 @@ async def get_statistics(db: Session = Depends(get_db)):
     thirty_days_ago = now - timedelta(days=30)
     
     # Try to use materialized views first, fallback to direct queries
-    use_materialized_views = True
-    
+    # Skip materialized views when blacklist is non-empty (views include all stations)
+    use_materialized_views = not bool(blacklist)
+
     # Total counts and data coverage from materialized view
     try:
+        if not use_materialized_views:
+            raise ValueError("skip")
         stats_summary = db.execute(text("SELECT * FROM statistics_summary LIMIT 1")).first()
         if stats_summary:
             total_countries = stats_summary.total_countries or 0
@@ -179,16 +186,27 @@ async def get_statistics(db: Session = Depends(get_db)):
         total_countries = db.query(func.count(Country.id)).scalar() or 0
         total_cities = db.query(func.count(City.id)).scalar() or 0
         total_locations = db.query(func.count(Location.id)).scalar() or 0
-        total_stations = db.query(func.count(Station.id)).scalar() or 0
-        total_measurements = db.query(func.count(Measurement.id)).scalar() or 0
-        total_calibration_measurements = db.query(func.count(CalibrationMeasurement.id)).scalar() or 0
-        total_values = db.query(func.count(Values.id)).scalar() or 0
-        total_station_statuses = db.query(func.count(StationStatus.id)).scalar() or 0
+        _station_query = db.query(func.count(Station.id))
+        if blacklist:
+            _station_query = _station_query.filter(~Station.device.in_(blacklist))
+        total_stations = _station_query.scalar() or 0
+        if blacklist:
+            total_measurements = db.query(func.count(Measurement.id)).join(Station).filter(~Station.device.in_(blacklist)).scalar() or 0
+            total_calibration_measurements = db.query(func.count(CalibrationMeasurement.id)).join(Station).filter(~Station.device.in_(blacklist)).scalar() or 0
+            total_values = db.query(func.count(Values.id)).join(Measurement).join(Station).filter(~Station.device.in_(blacklist)).scalar() or 0
+            total_station_statuses = db.query(func.count(StationStatus.id)).join(Station).filter(~Station.device.in_(blacklist)).scalar() or 0
+        else:
+            total_measurements = db.query(func.count(Measurement.id)).scalar() or 0
+            total_calibration_measurements = db.query(func.count(CalibrationMeasurement.id)).scalar() or 0
+            total_values = db.query(func.count(Values.id)).scalar() or 0
+            total_station_statuses = db.query(func.count(StationStatus.id)).scalar() or 0
         earliest_measurement = db.query(func.min(Measurement.time_measured)).scalar()
         latest_measurement = db.query(func.max(Measurement.time_measured)).scalar()
     
     # Active stations from materialized view
     try:
+        if not use_materialized_views:
+            raise ValueError("skip")
         active_summary = db.execute(text("SELECT * FROM active_stations_summary LIMIT 1")).first()
         if active_summary:
             active_stations_1h = active_summary.last_hour or 0
@@ -197,43 +215,69 @@ async def get_statistics(db: Session = Depends(get_db)):
             active_stations_30d = active_summary.last_30_days or 0
         else:
             # Fallback to direct queries
-            active_stations_1h = db.query(func.count(distinct(Station.id))).filter(
+            _aq = db.query(func.count(distinct(Station.id))).filter(
                 Station.last_active.isnot(None),
                 Station.last_active >= one_hour_ago
-            ).scalar() or 0
-            active_stations_24h = db.query(func.count(distinct(Station.id))).filter(
+            )
+            if blacklist:
+                _aq = _aq.filter(~Station.device.in_(blacklist))
+            active_stations_1h = _aq.scalar() or 0
+            _aq = db.query(func.count(distinct(Station.id))).filter(
                 Station.last_active.isnot(None),
                 Station.last_active >= one_day_ago
-            ).scalar() or 0
-            active_stations_7d = db.query(func.count(distinct(Station.id))).filter(
+            )
+            if blacklist:
+                _aq = _aq.filter(~Station.device.in_(blacklist))
+            active_stations_24h = _aq.scalar() or 0
+            _aq = db.query(func.count(distinct(Station.id))).filter(
                 Station.last_active.isnot(None),
                 Station.last_active >= seven_days_ago
-            ).scalar() or 0
-            active_stations_30d = db.query(func.count(distinct(Station.id))).filter(
+            )
+            if blacklist:
+                _aq = _aq.filter(~Station.device.in_(blacklist))
+            active_stations_7d = _aq.scalar() or 0
+            _aq = db.query(func.count(distinct(Station.id))).filter(
                 Station.last_active.isnot(None),
                 Station.last_active >= thirty_days_ago
-            ).scalar() or 0
+            )
+            if blacklist:
+                _aq = _aq.filter(~Station.device.in_(blacklist))
+            active_stations_30d = _aq.scalar() or 0
     except Exception:
         # Fallback to direct queries
-        active_stations_1h = db.query(func.count(distinct(Station.id))).filter(
+        _aq = db.query(func.count(distinct(Station.id))).filter(
             Station.last_active.isnot(None),
             Station.last_active >= one_hour_ago
-        ).scalar() or 0
-        active_stations_24h = db.query(func.count(distinct(Station.id))).filter(
+        )
+        if blacklist:
+            _aq = _aq.filter(~Station.device.in_(blacklist))
+        active_stations_1h = _aq.scalar() or 0
+        _aq = db.query(func.count(distinct(Station.id))).filter(
             Station.last_active.isnot(None),
             Station.last_active >= one_day_ago
-        ).scalar() or 0
-        active_stations_7d = db.query(func.count(distinct(Station.id))).filter(
+        )
+        if blacklist:
+            _aq = _aq.filter(~Station.device.in_(blacklist))
+        active_stations_24h = _aq.scalar() or 0
+        _aq = db.query(func.count(distinct(Station.id))).filter(
             Station.last_active.isnot(None),
             Station.last_active >= seven_days_ago
-        ).scalar() or 0
-        active_stations_30d = db.query(func.count(distinct(Station.id))).filter(
+        )
+        if blacklist:
+            _aq = _aq.filter(~Station.device.in_(blacklist))
+        active_stations_7d = _aq.scalar() or 0
+        _aq = db.query(func.count(distinct(Station.id))).filter(
             Station.last_active.isnot(None),
             Station.last_active >= thirty_days_ago
-        ).scalar() or 0
+        )
+        if blacklist:
+            _aq = _aq.filter(~Station.device.in_(blacklist))
+        active_stations_30d = _aq.scalar() or 0
     
     # Measurements in different timeframes from materialized view
     try:
+        if not use_materialized_views:
+            raise ValueError("skip")
         measurements_summary = db.execute(text("SELECT * FROM measurements_timeframe_summary LIMIT 1")).first()
         if measurements_summary:
             measurements_24h = measurements_summary.last_24h or 0
@@ -252,18 +296,28 @@ async def get_statistics(db: Session = Depends(get_db)):
             ).scalar() or 0
     except Exception:
         # Fallback to direct queries
-        measurements_24h = db.query(func.count(Measurement.id)).filter(
-            Measurement.time_measured >= one_day_ago
-        ).scalar() or 0
-        measurements_7d = db.query(func.count(Measurement.id)).filter(
-            Measurement.time_measured >= seven_days_ago
-        ).scalar() or 0
-        measurements_30d = db.query(func.count(Measurement.id)).filter(
-            Measurement.time_measured >= thirty_days_ago
-        ).scalar() or 0
+        if blacklist:
+            _mq = lambda td: db.query(func.count(Measurement.id)).join(Station).filter(
+                Measurement.time_measured >= td, ~Station.device.in_(blacklist)
+            ).scalar() or 0
+            measurements_24h = _mq(one_day_ago)
+            measurements_7d = _mq(seven_days_ago)
+            measurements_30d = _mq(thirty_days_ago)
+        else:
+            measurements_24h = db.query(func.count(Measurement.id)).filter(
+                Measurement.time_measured >= one_day_ago
+            ).scalar() or 0
+            measurements_7d = db.query(func.count(Measurement.id)).filter(
+                Measurement.time_measured >= seven_days_ago
+            ).scalar() or 0
+            measurements_30d = db.query(func.count(Measurement.id)).filter(
+                Measurement.time_measured >= thirty_days_ago
+            ).scalar() or 0
     
     # Stations by source from materialized view
     try:
+        if not use_materialized_views:
+            raise ValueError("skip")
         source_results = db.execute(text("SELECT source, count FROM stations_by_source_summary")).all()
         stations_by_source = {}
         for source_id, count in source_results:
@@ -273,14 +327,17 @@ async def get_statistics(db: Session = Depends(get_db)):
         # Fallback to direct queries
         stations_by_source = {}
         for source_id in [Source.LD, Source.LDTTN, Source.SC]:
-            count = db.query(func.count(Station.id)).filter(
-                Station.source == source_id
-            ).scalar() or 0
+            _sq = db.query(func.count(Station.id)).filter(Station.source == source_id)
+            if blacklist:
+                _sq = _sq.filter(~Station.device.in_(blacklist))
+            count = _sq.scalar() or 0
             if count > 0:
                 stations_by_source[Source.get_name(source_id)] = count
     
     # Stations by country from materialized view
     try:
+        if not use_materialized_views:
+            raise ValueError("skip")
         country_results = db.execute(text("SELECT country_name, station_count FROM stations_by_country_summary")).all()
         stations_by_country_dict = {
             country: count for country, count in country_results
@@ -288,15 +345,15 @@ async def get_statistics(db: Session = Depends(get_db)):
     except Exception:
         # Fallback to direct queries
         try:
-            stations_by_country = db.query(
+            _cq = db.query(
                 Country.name,
                 func.count(distinct(Station.id)).label('station_count')
             ).join(City, Country.id == City.country_id)\
              .join(Location, City.id == Location.city_id)\
-             .join(Station, Location.id == Station.location_id)\
-             .group_by(Country.name)\
-             .all()
-            
+             .join(Station, Location.id == Station.location_id)
+            if blacklist:
+                _cq = _cq.filter(~Station.device.in_(blacklist))
+            stations_by_country = _cq.group_by(Country.name).all()
             stations_by_country_dict = {
                 country: count for country, count in stations_by_country
             }
@@ -305,6 +362,8 @@ async def get_statistics(db: Session = Depends(get_db)):
     
     # Top cities from materialized view
     try:
+        if not use_materialized_views:
+            raise ValueError("skip")
         top_cities_results = db.execute(text("SELECT city_name, country_name, station_count FROM top_cities_summary")).all()
         top_cities_list = [
             {
@@ -317,14 +376,16 @@ async def get_statistics(db: Session = Depends(get_db)):
     except Exception:
         # Fallback to direct queries
         try:
-            top_cities = db.query(
+            _tcq = db.query(
                 City.name,
                 Country.name.label('country'),
                 func.count(distinct(Station.id)).label('station_count')
             ).join(Country, City.country_id == Country.id)\
              .join(Location, City.id == Location.city_id)\
-             .join(Station, Location.id == Station.location_id)\
-             .group_by(City.name, Country.name)\
+             .join(Station, Location.id == Station.location_id)
+            if blacklist:
+                _tcq = _tcq.filter(~Station.device.in_(blacklist))
+            top_cities = _tcq.group_by(City.name, Country.name)\
              .order_by(func.count(distinct(Station.id)).desc())\
              .limit(10)\
              .all()
