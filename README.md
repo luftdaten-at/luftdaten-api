@@ -6,8 +6,11 @@ luftdaten-api ist an open source database for air quality data build on the Fast
 ## Documentation
 
 ### Development
+Environment variables: copy **`.env.example`** to **`.env`** and adjust (database credentials, `DB_HOST`, optional `LOG_LEVEL`, monitoring vars for prod).
+
 Development version:
 
+    cp .env.example .env
     docker compose up -d
 
 
@@ -75,6 +78,24 @@ Stations can be excluded from API responses via a blacklist config file. Blackli
 - Invalid JSON → startup fails
 - Blacklisted stations return 404 on `/station/info`; they are filtered from all other endpoints
 
+#### Monitoring
+
+**Built-in monitor endpoint** (`GET /v1/monitor`):
+- Database usage: size, connections, cache hit ratio, transactions, top tables by size
+- API stats: request counts by endpoint and status code (since startup)
+- Application: uptime, scheduler jobs, blacklist size
+
+**Prometheus metrics** (`GET /v1/metrics` or `/metrics` without `/v1` prefix):
+- **HTTP (instrumentator):** `http_requests_total` (labels `handler`, `method`, `status` with `2xx`/`4xx` buckets), `http_request_duration_seconds` (per `handler`), `http_request_duration_highr_seconds` (global latency)
+- **Custom `luftdaten_*`:** `luftdaten_http_requests_total{area,method,status}` for roll-up by API area; gauges `luftdaten_blacklist_size`, `luftdaten_scheduler_jobs`, `luftdaten_db_up` (refreshed every minute)
+- Scrape noise (`/metrics`, `/health/simple`, `/monitor`) is excluded from default HTTP metrics but still visible in logs; custom area counter follows the same exclusions
+- Design details and example PromQL: [`docs/PROMETHEUS_GRAFANA_ENDPOINTS_PLAN.md`](docs/PROMETHEUS_GRAFANA_ENDPOINTS_PLAN.md)
+
+**Optional monitoring stack** (Postgres exporter, Prometheus, Grafana):
+- Start with: `docker compose --profile monitoring up -d`
+- Grafana: http://localhost:3000 (default login: admin/admin) — datasource and dashboard **Luftdaten API** are provisioned from `monitoring/grafana/`
+- Prometheus: http://localhost:9090 — config in `monitoring/prometheus.yml`, optional recording rules in `monitoring/prometheus/rules.yml`
+
 #### Deployment
 
 Build and push to Dockerhub.
@@ -92,6 +113,12 @@ Tags:
 Create docker-compose.prod.yml from example-docker-compose.prod.yml by setting the secret key. Then run:
 
     docker compose -f docker-compose.prod.yml up -d
+
+Optional **monitoring** (Prometheus, Grafana, postgres_exporter): copy `monitoring/` from the repo next to your compose file, set `GRAFANA_ADMIN_PASSWORD` in `.env`, then:
+
+    docker compose -f docker-compose.prod.yml --profile monitoring up -d
+
+Production example compose exposes Grafana via Traefik at `grafana.staging.api.luftdaten.at` (override with `GRAFANA_ROOT_URL` in `.env` if your host differs); point DNS to your server and ensure TLS/DNS challenge matches your Traefik setup.
 
 Create database structure:
     

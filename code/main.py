@@ -1,8 +1,17 @@
+from datetime import datetime, timezone
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from prometheus_fastapi_instrumentator import Instrumentator
+from monitoring.prometheus_metrics import (
+    instrumentation_record_area,
+    update_prometheus_app_gauges,
+)
 from routers import city_router, station_router, health_router, statistics_router
+from routers.monitor import router as monitor_router
 from routers.health import set_scheduler
 from utils.blacklist import load_blacklist_from_file
+from middleware.request_stats import RequestStatsMiddleware
 
 from apscheduler.schedulers.background import BackgroundScheduler
 import atexit
@@ -53,12 +62,17 @@ app = FastAPI(
         {
             "name": "statistics",
             "description": "Statistics endpoints to get database statistics and analytics."
+        },
+        {
+            "name": "monitor",
+            "description": "Monitoring and observability (database usage, API stats, Prometheus metrics)."
         }
     ]
 )
 
 origins = ["*"]
 
+app.add_middleware(RequestStatsMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
@@ -80,6 +94,20 @@ scheduler.add_job(refresh_stations_summary_cache, 'interval', minutes=10)
 
 # Scheduler starten
 scheduler.start()
+
+
+def refresh_prometheus_gauges():
+    """Periodic refresh of luftdaten_* gauges (blacklist, scheduler, DB up)."""
+    update_prometheus_app_gauges(app, scheduler)
+
+
+scheduler.add_job(
+    refresh_prometheus_gauges,
+    "interval",
+    minutes=1,
+    id="prometheus_app_gauges",
+    replace_existing=True,
+)
 
 # Stellen Sie sicher, dass der Scheduler sauber beendet wird
 def shutdown_scheduler():
@@ -113,11 +141,13 @@ atexit.register(shutdown_scheduler)
 @app.on_event("startup")
 def load_station_blacklist():
     """Load station blacklist from config file into app state."""
+    app.state.start_time = datetime.now(timezone.utc)
     try:
         app.state.blacklisted_station_ids = load_blacklist_from_file()
     except Exception as e:
         logging.getLogger(__name__).error("Failed to load station blacklist: %s", e)
         app.state.blacklisted_station_ids = frozenset()
+    refresh_prometheus_gauges()
 
 
 # Middleware to add /v1 prefix to all routes
@@ -133,6 +163,22 @@ app.include_router(station_router, prefix="/station")
 app.include_router(city_router, prefix="/city")
 app.include_router(health_router, prefix="/health")
 app.include_router(statistics_router, prefix="/statistics")
+app.include_router(monitor_router, prefix="/monitor")
+
+# Prometheus: tuned defaults + per-area counter; scrape noise excluded via handler regex
+_LATENCY_LOWR_BUCKETS = (0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0)
+Instrumentator(
+    excluded_handlers=[
+        r"^/metrics$",
+        r"^/health/simple$",
+        r"^/monitor(/.*)?$",
+    ],
+    should_round_latency_decimals=True,
+    round_latency_decimals=4,
+).add(instrumentation_record_area).instrument(
+    app,
+    latency_lowr_buckets=_LATENCY_LOWR_BUCKETS,
+).expose(app, endpoint="/metrics")
 
 # Set scheduler reference for health checks
 set_scheduler(scheduler)
