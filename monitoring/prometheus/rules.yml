@@ -1,0 +1,7 @@
+# Optional recording rules — pre-aggregates RPS by handler for heavy dashboards.
+groups:
+  - name: luftdaten_api
+    interval: 30s
+    rules:
+      - record: luftdaten:handler:request_rate5m
+        expr: sum by (handler) (rate(http_requests_total{job="luftdaten-api"}[5m]))
