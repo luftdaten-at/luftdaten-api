@@ -23,6 +23,21 @@ from enums import Precision, OutputFormat, Order, Dimension, CURRENT_TIME_RANGE_
 router = APIRouter()
 
 
+def _parse_required_station_ids(station_ids: str) -> list[str]:
+    """
+    Parse comma-separated station device IDs: strip segments, drop empties.
+    Raises 422 if no valid IDs remain (required for /historical).
+    """
+    devices = [part.strip() for part in station_ids.split(",")]
+    devices = [d for d in devices if d]
+    if not devices:
+        raise HTTPException(
+            status_code=422,
+            detail="station_ids is required and must contain at least one device ID",
+        )
+    return devices
+
+
 @router.get('/calibration', response_class=Response, tags=['station', 'calibration'])
 async def get_calibration_data(
     station_ids: str = Query(None, description="Comma-separated list of station device IDs to filter by. If not provided, all stations with calibration data are returned."),
@@ -696,7 +711,10 @@ async def get_topn_stations_by_dim(
 
 @router.get("/historical", response_class=Response, tags=["station"])
 async def get_historical_station_data(
-    station_ids: str = Query("", description="Comma-separated list of station device IDs. Empty string returns all stations."),
+    station_ids: str = Query(
+        ...,
+        description="Comma-separated station device IDs. At least one non-empty ID is required (empty or all-blank is rejected).",
+    ),
     start: str = Query(None, description="Start time in ISO format: YYYY-MM-DDThh:mm+xx:xx. If not provided, returns all available data."),
     end: str = Query(None, description="End time in ISO format: YYYY-MM-DDThh:mm+xx:xx, or 'current' for latest measurements. If not provided, returns all available data."),
     precision: Precision = Query(Precision.MAX, description="Time precision for aggregation: 'all' (max), 'hour', 'day', 'week', 'month', 'year'. Default is 'all'."),
@@ -714,7 +732,7 @@ async def get_historical_station_data(
     most recent measurements with outlier filtering applied.
     
     **Parameters:**
-    - **station_ids**: Comma-separated station device IDs (empty = all stations)
+    - **station_ids**: Comma-separated station device IDs (**required**; at least one ID)
     - **start**: Start time in ISO format (optional)
     - **end**: End time in ISO format, or 'current' for latest measurements (optional)
     - **precision**: Time aggregation precision:
@@ -759,9 +777,9 @@ async def get_historical_station_data(
     
     **Errors:**
     - 400: Invalid date format
+    - 422: Missing or empty station_ids
     """
-    # Konvertiere die Liste von station_devices in eine Liste
-    devices = station_ids.split(",") if station_ids else []
+    devices = _parse_required_station_ids(station_ids)
     cities = city_slugs.split(",") if city_slugs else [] 
 
     # Konvertiere start und end in datetime-Objekte
@@ -784,7 +802,7 @@ async def get_historical_station_data(
         )
         .join(Values)
         .join(Station)
-        .filter(or_(not devices, Station.device.in_(devices)))
+        .filter(Station.device.in_(devices))
         .join(Location)
         .outerjoin(City)
         .filter(or_(not cities, City.slug.in_(cities)))
@@ -804,11 +822,14 @@ async def get_historical_station_data(
 inner join measurements m on m.station_id = s.id
 inner join values v on v.measurement_id = m.id
 where s.last_active = m.time_measured"""
+        device_placeholders = ", ".join(f":d{i}" for i in range(len(devices)))
+        sql += f" AND s.device IN ({device_placeholders})"
+        params = {f"d{i}": dev for i, dev in enumerate(devices)}
         if blacklist:
             placeholders = ", ".join(f":b{i}" for i in range(len(blacklist)))
             sql += f" AND s.device NOT IN ({placeholders})"
+            params.update({f"b{i}": bid for i, bid in enumerate(blacklist)})
         sql += " group by s.id, s.device, m.time_measured, v.dimension;"
-        params = dict(zip([f"b{i}" for i in range(len(blacklist))], blacklist)) if blacklist else {}
         data = db.execute(text(sql), params).all()
 
         # filter outlier

@@ -428,14 +428,33 @@ class TestStationRouter:
         assert len(lines) > 0
     
     def test_get_historical_station_data_current(self, sample_data):
-        """Test getting historical station data with end=current"""
-        response = client.get("/v1/station/historical?end=current&output_format=csv")
+        """Test getting historical station data with end=current (station_ids required)"""
+        response = client.get(
+            "/v1/station/historical?station_ids=test_station_1&end=current&output_format=csv"
+        )
         assert response.status_code == 200
         assert response.headers["content-type"] == "text/csv; charset=utf-8"
-    
+        assert "test_station_1" in response.text
+
+    def test_get_historical_station_data_missing_station_ids(self, sample_data):
+        """station_ids query parameter is required"""
+        response = client.get("/v1/station/historical?output_format=csv")
+        assert response.status_code == 422
+
+    def test_get_historical_station_data_empty_station_ids(self, sample_data):
+        """Empty or whitespace-only station_ids returns 422"""
+        response = client.get("/v1/station/historical?station_ids=&output_format=csv")
+        assert response.status_code == 422
+        assert "device ID" in response.json()["detail"]
+
+        response = client.get("/v1/station/historical?station_ids=,,,&output_format=csv")
+        assert response.status_code == 422
+
     def test_get_historical_station_data_invalid_date(self, sample_data):
         """Test getting historical station data with invalid date format"""
-        response = client.get("/v1/station/historical?start=invalid-date&output_format=csv")
+        response = client.get(
+            "/v1/station/historical?station_ids=test_station_1&start=invalid-date&output_format=csv"
+        )
         assert response.status_code == 400
         assert "Invalid date format" in response.json()["detail"]
     
