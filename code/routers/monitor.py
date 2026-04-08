@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Request
 from sqlalchemy import text
 
-from database import engine
+from database import async_engine
 from middleware.request_stats import get_request_stats
 
 router = APIRouter()
@@ -18,53 +18,45 @@ logger = logging.getLogger(__name__)
 async def get_monitor(request: Request):
     """
     Get monitoring data: database usage, API endpoint stats, application metrics.
-
-    Returns JSON with:
-    - **database**: Size, connections, cache hit ratio, transactions, top tables
-    - **api**: Request counts by endpoint and status
-    - **application**: Uptime, scheduler jobs, blacklist size
     """
     result = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "version": "0.3",
-        "database": _get_database_metrics(),
+        "database": await _get_database_metrics(),
         "api": get_request_stats(),
         "application": _get_application_metrics(request),
     }
     return result
 
 
-def _get_database_metrics() -> dict:
+async def _get_database_metrics() -> dict:
     """Query PostgreSQL for database usage metrics."""
     try:
-        with engine.connect() as conn:
-            # DB size
-            size_row = conn.execute(
-                text("SELECT pg_database_size(current_database()) as size")
+        async with async_engine.connect() as conn:
+            size_row = (
+                await conn.execute(text("SELECT pg_database_size(current_database()) as size"))
             ).fetchone()
             size_bytes = size_row.size if size_row else 0
 
-            # Connections
-            conn_rows = conn.execute(
-                text("""
+            conn_rows = (
+                await conn.execute(text("""
                     SELECT state, count(*) as cnt
                     FROM pg_stat_activity
                     WHERE datname = current_database()
                     GROUP BY state
-                """)
+                """))
             ).fetchall()
             conn_map = {str(r.state) if r.state else "unknown": r.cnt for r in conn_rows}
             active = conn_map.get("active", 0)
             idle = conn_map.get("idle", 0) + conn_map.get("idle in transaction", 0)
             total = sum(conn_map.values())
 
-            # Cache hit ratio from pg_stat_database
-            db_stat = conn.execute(
-                text("""
+            db_stat = (
+                await conn.execute(text("""
                     SELECT blks_hit, blks_read, xact_commit, xact_rollback
                     FROM pg_stat_database
                     WHERE datname = current_database()
-                """)
+                """))
             ).fetchone()
 
             blks_hit = db_stat.blks_hit or 0
@@ -75,9 +67,8 @@ def _get_database_metrics() -> dict:
             xact_commit = db_stat.xact_commit or 0
             xact_rollback = db_stat.xact_rollback or 0
 
-            # Top tables by size
-            table_rows = conn.execute(
-                text("""
+            table_rows = (
+                await conn.execute(text("""
                     SELECT
                         relname as table_name,
                         pg_total_relation_size(c.oid) as size_bytes
@@ -86,7 +77,7 @@ def _get_database_metrics() -> dict:
                     WHERE n.nspname = 'public' AND c.relkind = 'r'
                     ORDER BY pg_total_relation_size(c.oid) DESC
                     LIMIT 10
-                """)
+                """))
             ).fetchall()
 
             top_tables = [

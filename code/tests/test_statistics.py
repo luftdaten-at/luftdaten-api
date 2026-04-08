@@ -1,56 +1,26 @@
 import sys
 import os
 
-# Add the parent directory to the path so we can import modules
-# This must be done BEFORE any imports from the parent directory
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pytest
 from fastapi.testclient import TestClient
 from main import app
-from database import get_db, Base
 from models import (
     City, Country, Station, Location, Measurement, Values,
     CalibrationMeasurement, StationStatus
 )
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import NullPool
+from db_testing import TestSyncSessionLocal
 from datetime import datetime, timezone, timedelta
 from enums import SensorModel, Dimension, Source
 
-# Configure test database
-SQLALCHEMY_DATABASE_URL = "postgresql://test_user:test_password@db_test/test_database"
-
-engine = create_engine(SQLALCHEMY_DATABASE_URL, poolclass=NullPool)
-TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
 client = TestClient(app)
 
-def override_get_db():
-    try:
-        db = TestingSessionLocal()
-        yield db
-    finally:
-        db.close()
-
-app.dependency_overrides[get_db] = override_get_db
-
-@pytest.fixture(scope="function", autouse=True)
-def setup_database():
-    Base.metadata.create_all(bind=engine)
-    yield
-    # Drop all tables, ignoring errors if tables don't exist
-    try:
-        Base.metadata.drop_all(bind=engine)
-    except Exception:
-        # Ignore errors during teardown (e.g., tables already dropped)
-        pass
 
 @pytest.fixture
 def sample_statistics_data():
     """Create comprehensive sample data for statistics testing"""
-    db = next(override_get_db())
+    db = TestSyncSessionLocal()
     
     # Create countries
     country1 = Country(name="Austria", code="AT")
@@ -259,17 +229,20 @@ def sample_statistics_data():
     db.add(status2)
     db.add(status3)
     db.commit()
-    
-    return {
-        "countries": [country1, country2],
-        "cities": [city1, city2],
-        "locations": [location1, location2],
-        "stations": [station1, station2, station3, station4],
-        "measurements": [measurement1, measurement2, measurement3, measurement4, measurement5],
-        "values": values1 + values2 + values3 + values4 + values5,
-        "calibration_measurement": calibration_measurement,
-        "statuses": [status1, status2, status3]
-    }
+
+    try:
+        yield {
+            "countries": [country1, country2],
+            "cities": [city1, city2],
+            "locations": [location1, location2],
+            "stations": [station1, station2, station3, station4],
+            "measurements": [measurement1, measurement2, measurement3, measurement4, measurement5],
+            "values": values1 + values2 + values3 + values4 + values5,
+            "calibration_measurement": calibration_measurement,
+            "statuses": [status1, status2, status3]
+        }
+    finally:
+        db.close()
 
 class TestStatisticsRouter:
     
@@ -329,7 +302,7 @@ class TestStatisticsRouter:
         assert totals["stations"] == 4
         assert totals["measurements"] == 5
         assert totals["calibration_measurements"] == 1
-        assert totals["values"] == 8  # 3 + 2 + 1 + 1 + 1
+        assert totals["values"] == 9  # measurement values (3+2+1+1+1) + 1 calibration value row
         assert totals["station_statuses"] == 3
         
         # Check active stations
@@ -394,7 +367,7 @@ class TestStatisticsRouter:
         assert pm25_dim is not None
         assert pm25_dim["dimension_name"] == "PM2.5"
         assert pm25_dim["unit"] == "µg/m³"
-        assert pm25_dim["value_count"] == 4  # 4 measurements with PM2_5
+        assert pm25_dim["value_count"] == 5  # measurement values + calibration PM2.5 row
         assert pm25_dim["average_value"] is not None
         assert pm25_dim["min_value"] is not None
         assert pm25_dim["max_value"] is not None
