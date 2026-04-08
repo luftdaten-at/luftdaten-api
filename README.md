@@ -131,5 +131,7 @@ Open API Standard 3.1
 /docs
 https://api.luftdaten.at/docs
 
+**Note:** `GET /v1/station/historical` requires **`station_ids`** with at least one device ID (comma-separated). Omitting it or sending an empty value returns **422**; use `GET /v1/station/all` (or similar) to discover IDs first.
+
 ## License
 This project is licensed under GNU General Public License v3.0.

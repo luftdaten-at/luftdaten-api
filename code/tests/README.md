@@ -106,8 +106,9 @@ Make sure this database is available and accessible during testing.
   - Top N stations by dimension
 
 - **GET /v1/station/historical** - Historical data
+  - Requires **station_ids** (at least one device ID; empty/missing → 422)
   - Historical data with station IDs
-  - End=current scenario
+  - End=current scenario (with station_ids)
   - Invalid date format (400 error)
 
 - **Legacy endpoints** - Backward compatibility
