@@ -35,6 +35,37 @@ log_level_mapping = {
 # Setze das Logging-Level basierend auf der Umgebungsvariablen
 logging.basicConfig(level=log_level_mapping.get(log_level, logging.INFO))
 
+
+def _cors_allowlist():
+    """
+    CORS: `allow_origins=['*']` must not be combined with `allow_credentials=True`
+    (browser will block; fetch with credentials: 'include' requires an explicit origin).
+    Override with CORS_ORIGINS (comma-separated). Use CORS_ORIGINS=* for public wildcard
+    without credentials.
+    """
+    raw = os.getenv("CORS_ORIGINS", "").strip()
+    if raw == "*":
+        return ["*"], False
+    if raw:
+        origins = [o.strip() for o in raw.split(",") if o.strip()]
+        cred = os.getenv("CORS_ALLOW_CREDENTIALS", "true").lower() in ("1", "true", "yes")
+        return origins, cred
+    return (
+        [
+            "https://datahub.luftdaten.at",
+            "https://www.luftdaten.at",
+            "https://luftdaten.at",
+            "http://localhost:3000",
+            "http://127.0.0.1:3000",
+            "http://localhost:5173",
+            "http://127.0.0.1:5173",
+        ],
+        True,
+    )
+
+
+_cors_origins, _cors_credentials = _cors_allowlist()
+
 app = FastAPI(
     title="Luftdaten.at API",
     description="Open source database, analytics and API for air quality and micro climate data.",
@@ -70,13 +101,11 @@ app = FastAPI(
     ]
 )
 
-origins = ["*"]
-
 app.add_middleware(RequestStatsMiddleware)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
-    allow_credentials=True,
+    allow_origins=_cors_origins,
+    allow_credentials=_cors_credentials,
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
