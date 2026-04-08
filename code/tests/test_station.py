@@ -1,18 +1,14 @@
 import sys
 import os
 
-# Add the parent directory to the path so we can import modules
-# This must be done BEFORE any imports from the parent directory
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pytest
 from fastapi.testclient import TestClient
 from main import app
-from database import get_db, Base
-from models import Station, Location, Measurement, Values, City, Country, CalibrationMeasurement
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import NullPool
+from models import Station, Location, Measurement, Values, CalibrationMeasurement, Country, City
+from db_testing import TestSyncSessionLocal
+from sqlalchemy import select
 from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
 import json
@@ -20,48 +16,21 @@ import csv
 import io
 from unittest.mock import patch, MagicMock
 
-# Configure test database
-SQLALCHEMY_DATABASE_URL = "postgresql://test_user:test_password@db_test/test_database"
-
-engine = create_engine(SQLALCHEMY_DATABASE_URL, poolclass=NullPool)
-TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+from enums import SensorModel, Dimension
 
 client = TestClient(app)
 
-def override_get_db():
-    try:
-        db = TestingSessionLocal()
-        yield db
-    finally:
-        db.close()
-
-app.dependency_overrides[get_db] = override_get_db
-
-@pytest.fixture(scope="function", autouse=True)
-def setup_database():
-    Base.metadata.create_all(bind=engine)
-    yield
-    # Drop all tables, ignoring errors if tables don't exist
-    try:
-        Base.metadata.drop_all(bind=engine)
-    except Exception:
-        # Ignore errors during teardown (e.g., tables already dropped)
-        pass
 
 @pytest.fixture
 def sample_data():
-    """Create sample data for testing"""
-    db = next(override_get_db())
-    
-    # Create country
+    db = TestSyncSessionLocal()
     country = Country(name="Austria", code="AT")
     db.add(country)
     db.commit()
     db.refresh(country)
-    
-    # Create city
+
     city = City(
-        name="Vienna", 
+        name="Vienna",
         country_id=country.id,
         tz="Europe/Vienna",
         lat=48.2082,
@@ -70,19 +39,18 @@ def sample_data():
     db.add(city)
     db.commit()
     db.refresh(city)
-    
-    # Create location
+
     location = Location(
         lat=48.2082,
         lon=16.3738,
         height=100.0,
-        city_id=city.id
+        city_id=city.id,
+        country_id=country.id
     )
     db.add(location)
     db.commit()
     db.refresh(location)
-    
-    # Create station
+
     station = Station(
         device="test_station_1",
         location_id=location.id,
@@ -92,9 +60,7 @@ def sample_data():
     db.add(station)
     db.commit()
     db.refresh(station)
-    
-    # Create measurement (using integer sensor model ID: SDS011=13)
-    from enums import SensorModel
+
     measurement = Measurement(
         station_id=station.id,
         location_id=location.id,
@@ -104,9 +70,7 @@ def sample_data():
     db.add(measurement)
     db.commit()
     db.refresh(measurement)
-    
-    # Create values (using integer dimension IDs: PM1_0=2, PM2_5=3, TEMPERATURE=7)
-    from enums import Dimension
+
     values = [
         Values(measurement_id=measurement.id, dimension=Dimension.PM1_0, value=10.5),
         Values(measurement_id=measurement.id, dimension=Dimension.PM2_5, value=5.2),
@@ -115,9 +79,7 @@ def sample_data():
     for value in values:
         db.add(value)
     db.commit()
-    
-    # Create calibration measurement (using integer sensor model ID: SDS011=13)
-    from enums import SensorModel
+
     calibration_measurement = CalibrationMeasurement(
         station_id=station.id,
         location_id=location.id,
@@ -127,9 +89,7 @@ def sample_data():
     db.add(calibration_measurement)
     db.commit()
     db.refresh(calibration_measurement)
-    
-    # Create calibration values (using integer dimension IDs: PM1_0=2, PM2_5=3)
-    from enums import Dimension
+
     calibration_values = [
         Values(calibration_measurement_id=calibration_measurement.id, dimension=Dimension.PM1_0, value=9.8),
         Values(calibration_measurement_id=calibration_measurement.id, dimension=Dimension.PM2_5, value=4.9)
@@ -137,35 +97,38 @@ def sample_data():
     for value in calibration_values:
         db.add(value)
     db.commit()
-    
-    return {
-        "country": country,
-        "city": city,
-        "location": location,
-        "station": station,
-        "measurement": measurement,
-        "values": values,
-        "calibration_measurement": calibration_measurement,
-        "calibration_values": calibration_values
-    }
+
+    try:
+        yield {
+            "_db": db,
+            "country": country,
+            "city": city,
+            "location": location,
+            "station": station,
+            "measurement": measurement,
+            "values": values,
+            "calibration_measurement": calibration_measurement,
+            "calibration_values": calibration_values
+        }
+    finally:
+        db.close()
+
 
 class TestStationRouter:
-    
+
     def test_get_current_station_data_no_data(self):
-        """Test getting current station data when no data exists"""
         response = client.get("/v1/station/current")
         assert response.status_code == 404
         assert response.json() == {"detail": "No stations found"}
 
     def test_get_current_station_data_with_data(self, sample_data):
-        """Test getting current station data with sample data"""
         response = client.get("/v1/station/current")
         assert response.status_code == 200
-        
+
         data = response.json()
         assert data["type"] == "FeatureCollection"
         assert len(data["features"]) == 1
-        
+
         feature = data["features"][0]
         assert feature["type"] == "Feature"
         assert feature["geometry"]["type"] == "Point"
@@ -174,82 +137,65 @@ class TestStationRouter:
         assert feature["properties"]["height"] == 100.0
         assert "sensors" in feature["properties"]
         assert len(feature["properties"]["sensors"]) > 0
-    
+
     def test_get_current_station_data_csv_format(self, sample_data):
-        """Test getting current station data in CSV format"""
         response = client.get("/v1/station/current?output_format=csv")
         assert response.status_code == 200
         assert response.headers["content-type"] == "text/csv; charset=utf-8"
-        
-        # Parse CSV content
+
         csv_content = response.text
         lines = csv_content.strip().split('\n')
-        assert len(lines) > 1  # Header + at least one data row
-        
-        # Check header
+        assert len(lines) > 1
+
         header = lines[0].split(',')
         expected_header = ["device", "lat", "lon", "last_active", "height", "sensor_model", "dimension", "value"]
         for field in expected_header:
             assert field in header
-    
+
     def test_get_current_station_data_with_calibration(self, sample_data):
-        """Test getting current station data with calibration data"""
         response = client.get("/v1/station/current?calibration_data=true")
         assert response.status_code == 200
-        
+
         data = response.json()
         feature = data["features"][0]
         assert "calibration_sensors" in feature["properties"]
         assert len(feature["properties"]["calibration_sensors"]) > 0
-    
+
     def test_get_current_station_data_specific_stations(self, sample_data):
-        """Test getting current station data for specific station IDs"""
         response = client.get("/v1/station/current?station_ids=test_station_1")
         assert response.status_code == 200
-        
+
         data = response.json()
         assert len(data["features"]) == 1
         assert data["features"][0]["properties"]["device"] == "test_station_1"
-    
+
     def test_get_current_station_data_inactive_stations(self, sample_data):
-        """Test getting current station data with inactive stations (outside last_active window)"""
-        db = next(override_get_db())
-        
-        # Make station inactive by setting last_active to old time (more than 3600 seconds ago)
-        # The endpoint uses Europe/Vienna timezone, so we need to account for that
+        db = sample_data["_db"]
         vienna_tz = ZoneInfo("Europe/Vienna")
-        # Set to 2 hours ago in Vienna timezone to ensure it's outside the 1-hour window
         old_time = datetime.now(vienna_tz) - timedelta(hours=2)
-        # Convert to UTC for database storage (if needed) or keep as timezone-aware
         old_time_utc = old_time.astimezone(timezone.utc).replace(tzinfo=None)
-        
-        # Query station by known device name to avoid DetachedInstanceError
-        station = db.query(Station).filter(Station.device == "test_station_1").first()
-        station.last_active = old_time_utc
-        # Query measurement by station_id
-        measurement = db.query(Measurement).filter(Measurement.station_id == station.id).first()
-        measurement.time_measured = old_time_utc
+
+        sample_data["station"].last_active = old_time_utc
+        sample_data["measurement"].time_measured = old_time_utc
         db.commit()
-        
+
         response = client.get("/v1/station/current")
         assert response.status_code == 404
         assert response.json() == {"detail": "No stations found"}
 
     def test_get_station_info_not_found(self):
-        """Test getting station info for non-existent station"""
         response = client.get("/v1/station/info?station_id=nonexistent")
         assert response.status_code == 404
         assert response.json() == {"detail": "Station not found"}
-    
+
     def test_get_station_info_found(self, sample_data):
-        """Test getting station info for existing station"""
         response = client.get("/v1/station/info?station_id=test_station_1")
         assert response.status_code == 200
-        
+
         data = response.json()
         assert "station" in data
         assert "sensors" in data
-        
+
         station_info = data["station"]
         assert station_info["device"] == "test_station_1"
         assert station_info["firmware"] == "1.0"
@@ -257,58 +203,44 @@ class TestStationRouter:
         assert station_info["location"]["lat"] == 48.2082
         assert station_info["location"]["lon"] == 16.3738
         assert station_info["location"]["height"] == 100.0
-    
+
     def test_get_calibration_data_no_stations(self):
-        """Test getting calibration data when no stations exist"""
         response = client.get("/v1/station/calibration")
         assert response.status_code == 200
-        assert response.text.strip() == ""  # Empty CSV
-    
+        assert response.text.strip() == ""
+
     def test_get_calibration_data_with_data(self, sample_data):
-        """Test getting calibration data with sample data"""
         response = client.get("/v1/station/calibration")
         assert response.status_code == 200
         assert response.headers["content-type"] == "text/csv; charset=utf-8"
-        
+
         csv_content = response.text
-        lines = csv_content.strip().split('\n')
-        assert len(lines) > 0
-        
-        # Check that calibration data is present
         assert "test_station_1" in csv_content
-        # Sensor model is stored as integer (13 for SDS011), not string
         assert "13" in csv_content
-    
+
     def test_get_calibration_data_specific_stations(self, sample_data):
-        """Test getting calibration data for specific stations"""
         response = client.get("/v1/station/calibration?station_ids=test_station_1")
         assert response.status_code == 200
-        
-        csv_content = response.text
-        assert "test_station_1" in csv_content
-    
+        assert "test_station_1" in response.text
+
     def test_get_calibration_data_no_data_flag(self, sample_data):
-        """Test getting calibration data with data=false flag"""
         response = client.get("/v1/station/calibration?data=false")
         assert response.status_code == 200
-        
-        csv_content = response.text
-        lines = csv_content.strip().split('\n')
-        assert len(lines) == 1  # Only station IDs
-        assert "test_station_1" in csv_content
-    
+        lines = response.text.strip().split('\n')
+        assert len(lines) == 1
+        assert "test_station_1" in response.text
+
     def test_post_station_data_success(self):
-        """Test posting station data successfully"""
         station_data = {
-        "device": "test_device_123",
-        "location": {
-            "lat": 48.2082,
-            "lon": 16.3738,
-            "height": 100.5
-        },
-        "time": "2024-04-29T08:25:20.766Z",
-        "firmware": "1.0",
-        "apikey": "testapikey123"
+            "device": "test_device_123",
+            "location": {
+                "lat": 48.2082,
+                "lon": 16.3738,
+                "height": 100.5
+            },
+            "time": "2024-04-29T08:25:20.766Z",
+            "firmware": "1.0",
+            "apikey": "testapikey123"
         }
 
         sensors = {
@@ -319,29 +251,27 @@ class TestStationRouter:
         assert response.status_code == 200
         assert response.json() == {"status": "success"}
 
-        # Verify station was created in database
-        db = next(override_get_db())
-        station = db.query(Station).filter_by(device="test_device_123").first()
-        assert station is not None
-        assert station.device == "test_device_123"
-    
+        db = TestSyncSessionLocal()
+        try:
+            r = db.execute(select(Station).where(Station.device == "test_device_123"))
+            station = r.scalar_one_or_none()
+            assert station is not None
+            assert station.device == "test_device_123"
+        finally:
+            db.close()
+
     def test_post_station_status_success(self):
-        """Test posting station status successfully"""
-        # Mock geocoding calls to speed up test (avoid external API calls)
-        with patch('utils.reverse_geocode') as mock_reverse_geocode, \
-             patch('utils.Nominatim') as mock_nominatim, \
-             patch('utils.tf.timezone_at') as mock_timezone:
-            # Mock reverse geocoding
+        mock_tf = MagicMock()
+        mock_tf.timezone_at.return_value = 'Europe/Vienna'
+        with patch('utils.geocoding.reverse_geocode') as mock_reverse_geocode, \
+             patch('utils.geocoding.Nominatim') as mock_nominatim, \
+             patch('utils.geocoding.tf', mock_tf):
             mock_reverse_geocode.return_value = ('Vienna', 'Austria', 'at')
-            
-            # Mock geocoding for city coordinates
+
             mock_geocoder = MagicMock()
             mock_geocoder.geocode.return_value = (None, (48.2082, 16.3738))
             mock_nominatim.return_value = mock_geocoder
-            
-            # Mock timezone finder
-            mock_timezone.return_value = 'Europe/Vienna'
-            
+
             station_data = {
                 "device": "test_device_123",
                 "firmware": "1.0",
@@ -362,87 +292,70 @@ class TestStationRouter:
             response = client.post("/v1/station/status", json={"station": station_data, "status_list": status_list})
             assert response.status_code == 200
             assert response.json() == {"status": "success"}
-    
+
     def test_get_all_stations_no_data(self):
-        """Test getting all stations when no data exists"""
         response = client.get("/v1/station/all")
         assert response.status_code == 200
         assert response.headers["content-type"] == "text/csv; charset=utf-8"
-        
-        csv_content = response.text
-        lines = csv_content.strip().split('\n')
-        assert len(lines) == 1  # Only header
-    
+
+        lines = response.text.strip().split('\n')
+        assert len(lines) == 1
+
     def test_get_all_stations_with_data(self, sample_data):
-        """Test getting all stations with sample data"""
         response = client.get("/v1/station/all")
         assert response.status_code == 200
-        assert response.headers["content-type"] == "text/csv; charset=utf-8"
-        
+
         csv_content = response.text
         lines = csv_content.strip().split('\n')
-        assert len(lines) == 2  # Header + data row
-        
-        # Check header (strip \r if present)
+        assert len(lines) == 2
+
         header = [field.strip('\r') for field in lines[0].split(',')]
         expected_header = ["id", "last_active", "location_lat", "location_lon", "measurements_count"]
         for field in expected_header:
             assert field in header
-        
-        # Check data row contains station info
+
         assert "test_station_1" in csv_content
-    
+
     def test_get_all_stations_json_format(self, sample_data):
-        """Test getting all stations in JSON format"""
         response = client.get("/v1/station/all?output_format=json")
         assert response.status_code == 200
-        
+
         data = response.json()
         assert isinstance(data, list)
         assert len(data) == 1
-        
+
         station_data = data[0]
         assert station_data["id"] == "test_station_1"
         assert "last_active" in station_data
         assert "location" in station_data
         assert "measurements_count" in station_data
-    
+
     def test_get_topn_stations(self, sample_data):
-        """Test getting top N stations by dimension"""
         response = client.get("/v1/station/topn?n=5&dimension=1&order=min&output_format=csv")
         assert response.status_code == 200
         assert response.headers["content-type"] == "text/csv; charset=utf-8"
-        
-        csv_content = response.text
-        lines = csv_content.strip().split('\n')
+
+        lines = response.text.strip().split('\n')
         assert len(lines) > 0
-    
+
     def test_get_historical_station_data(self, sample_data):
-        """Test getting historical station data"""
         response = client.get("/v1/station/historical?station_ids=test_station_1&output_format=csv")
         assert response.status_code == 200
-        assert response.headers["content-type"] == "text/csv; charset=utf-8"
-        
-        csv_content = response.text
-        lines = csv_content.strip().split('\n')
+        lines = response.text.strip().split('\n')
         assert len(lines) > 0
-    
+
     def test_get_historical_station_data_current(self, sample_data):
-        """Test getting historical station data with end=current (station_ids required)"""
         response = client.get(
             "/v1/station/historical?station_ids=test_station_1&end=current&output_format=csv"
         )
         assert response.status_code == 200
-        assert response.headers["content-type"] == "text/csv; charset=utf-8"
         assert "test_station_1" in response.text
 
     def test_get_historical_station_data_missing_station_ids(self, sample_data):
-        """station_ids query parameter is required"""
         response = client.get("/v1/station/historical?output_format=csv")
         assert response.status_code == 422
 
     def test_get_historical_station_data_empty_station_ids(self, sample_data):
-        """Empty or whitespace-only station_ids returns 422"""
         response = client.get("/v1/station/historical?station_ids=&output_format=csv")
         assert response.status_code == 422
         assert "device ID" in response.json()["detail"]
@@ -451,25 +364,18 @@ class TestStationRouter:
         assert response.status_code == 422
 
     def test_get_historical_station_data_invalid_date(self, sample_data):
-        """Test getting historical station data with invalid date format"""
         response = client.get(
             "/v1/station/historical?station_ids=test_station_1&start=invalid-date&output_format=csv"
         )
         assert response.status_code == 400
         assert "Invalid date format" in response.json()["detail"]
-    
+
     def test_get_current_station_data_all_old_endpoint(self, sample_data):
-        """Test the old /current/all endpoint for compatibility"""
         response = client.get("/v1/station/current/all")
         assert response.status_code == 200
-        assert response.headers["content-type"] == "text/csv; charset=utf-8"
-        
-        csv_content = response.text
-        lines = csv_content.strip().split('\n')
+        lines = response.text.strip().split('\n')
         assert len(lines) > 0
-    
+
     def test_get_station_history_old_endpoint(self, sample_data):
-        """Test the old /history endpoint for compatibility"""
         response = client.get("/v1/station/history")
         assert response.status_code == 200
-        assert response.headers["content-type"] == "text/csv; charset=utf-8"

@@ -4,9 +4,11 @@ import numpy as np
 from geopy.geocoders import Nominatim
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from dependencies import get_blacklist
-from sqlalchemy.orm import Session
+from sqlalchemy import func, distinct, select, cast, String
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 from database import get_db
-from sqlalchemy import func, or_, distinct, and_
+from utils.helpers import as_naive_utc
 from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
 
@@ -19,60 +21,28 @@ router = APIRouter()
 
 
 @router.get("/all", tags=["city"])
-async def get_all_cities(db: Session = Depends(get_db)):
+async def get_all_cities(db: AsyncSession = Depends(get_db)):
     """
     Get all cities in the database.
-    
+
     Returns a list of all cities with their names, slugs, location coordinates, and associated country information.
     Cities are locations where air quality monitoring stations are deployed.
-    
-    **Response:**
-    JSON object containing an array of cities:
-    - **id**: City database ID
-    - **name**: City name
-    - **slug**: URL-friendly city identifier
-    - **location**: Object containing latitude and longitude coordinates (may be None if not set)
-      - **latitude**: City latitude coordinate
-      - **longitude**: City longitude coordinate
-    - **country**: Object containing country name and slug
-    
-    **Example Response:**
-    ```json
-    {
-      "cities": [
-        {
-          "id": 1,
-          "name": "Vienna",
-          "slug": "vienna",
-          "location": {
-            "latitude": 48.2082,
-            "longitude": 16.3738
-          },
-          "country": {
-            "name": "Austria",
-            "slug": "austria"
-          }
-        }
-      ]
-    }
-    ```
-    
-    **Errors:**
-    - 404: No cities found in database
     """
-    # Check cache first
     cache = get_cities_cache()
     cache_key = "cities_all"
     cached_response = cache.get(cache_key)
-    
+
     if cached_response:
         logging.getLogger(__name__).debug(f"Cache hit for {cache_key}")
         return Response(content=cached_response, media_type="application/json")
-    
-    # Cache miss - fetch from database
+
     logging.getLogger(__name__).debug(f"Cache miss for {cache_key}")
-    
-    cities = db.query(City, Country).join(Country, City.country_id == Country.id).all()
+
+    r = await db.execute(
+        select(City, Country)
+        .join(Country, City.country_id == Country.id)
+    )
+    cities = r.all()
 
     if not cities:
         raise HTTPException(status_code=404, detail="No cities found")
@@ -91,94 +61,32 @@ async def get_all_cities(db: Session = Depends(get_db)):
                     "name": country.name,
                     "slug": country.slug
                 }
-            } 
+            }
             for city, country in cities
         ]
     }
-    
-    # Serialize and cache the response
+
     response_content = json.dumps(response).encode('utf-8')
     cache.set(cache_key, response_content)
-    
+
     return Response(content=response_content, media_type="application/json")
 
 
 @router.get("/current", tags=["city", "current"])
 async def get_average_measurements_by_city(
     city_slug: str = Query(..., description="The slug (URL-friendly identifier) of the city to get average measurements for. Use /city/all to get available city slugs."),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     blacklist: frozenset[str] = Depends(get_blacklist),
 ):
     """
     Get current average air quality measurements for a city.
-    
-    Returns aggregated air quality data for all active stations in a city.
-    Measurements are averaged from the last hour, with outlier filtering using
-    percentile-based method (alpha/2 on each side, default alpha=0.1).
-    
-    **Parameters:**
-    - **city_slug**: City slug identifier (required)
-      - Use `/city/all` endpoint to get available city slugs
-    
-    **Response Format:**
-    - GeoJSON Feature with Point geometry
-    - Properties include:
-      - **name**: City name
-      - **city_slug**: City identifier
-      - **country**: Country name
-      - **timezone**: City timezone
-      - **time**: Current time in city timezone (ISO format)
-      - **station_count**: Number of stations in the city
-      - **values**: Array of aggregated measurements:
-        - **dimension**: Dimension ID (e.g., 2=PM1.0, 3=PM2.5)
-        - **value**: Averaged value (outliers filtered)
-        - **value_count**: Number of individual values used
-        - **station_count**: Number of stations contributing
-    
-    **Data Processing:**
-    1. Only measurements from the last hour are included
-    2. NaN values are filtered out
-    3. Outliers are removed using percentile filtering (alpha=0.1)
-    4. Remaining values are averaged per dimension
-    
-    **Example Response:**
-    ```json
-    {
-      "type": "Feature",
-      "geometry": {
-        "type": "Point",
-        "coordinates": [16.3738, 48.2082]
-      },
-      "properties": {
-        "name": "Vienna",
-        "city_slug": "vienna",
-        "country": "Austria",
-        "timezone": "Europe/Vienna",
-        "time": "2024-01-01T13:00:00+01:00",
-        "station_count": 5,
-        "values": [
-          {
-            "dimension": 2,
-            "value": 10.5,
-            "value_count": 15,
-            "station_count": 3
-          },
-          {
-            "dimension": 3,
-            "value": 15.2,
-            "value_count": 15,
-            "station_count": 3
-          }
-        ]
-      }
-    }
-    ```
-    
-    **Errors:**
-    - 404: City not found
-    - Note: If city coordinates are missing, they will be geocoded automatically
     """
-    db_city = db.query(City).filter(City.slug == city_slug).first()
+    r = await db.execute(
+        select(City)
+        .where(City.slug == city_slug)
+        .options(selectinload(City.country))
+    )
+    db_city = r.scalar_one_or_none()
 
     if not db_city:
         raise HTTPException(status_code=404, detail="City not found")
@@ -187,22 +95,19 @@ async def get_average_measurements_by_city(
         lat, lon = Nominatim(user_agent="api.luftdaten.at", domain="nominatim.dataplexity.eu", scheme="https").geocode(city_slug)[1]
         db_city.lat = lat
         db_city.lon = lon
-        db.commit()
-        
-        # Invalidate cities cache after coordinates are added
+        await db.commit()
+
         cache = get_cities_cache()
         cache.invalidate("cities_all")
-    
 
-    # only select the measurements from the last hour
     now = datetime.now(timezone.utc)
-    start = now - timedelta(hours=1)
+    start = as_naive_utc(now - timedelta(hours=1))
 
-    q = (
-        db.query(
+    stmt = (
+        select(
             Values.dimension,
             func.array_agg(Values.value),
-            func.count(Values.id), 
+            func.count(Values.id),
             func.count(distinct(Station.id)),
         )
         .select_from(Values)
@@ -210,30 +115,38 @@ async def get_average_measurements_by_city(
         .join(Location)
         .join(City)
         .join(Station, Station.id == Measurement.station_id)
-        .filter(City.slug == city_slug)
-        .filter(Values.value != 'nan')
-        .filter(Measurement.time_measured >= start)
+        .where(City.slug == city_slug)
+        .where(cast(Values.value, String) != 'nan')
+        .where(Measurement.time_measured >= start)
         .group_by(Values.dimension)
     )
     if blacklist:
-        q = q.filter(~Station.device.in_(blacklist))
+        stmt = stmt.where(~Station.device.in_(blacklist))
 
-    station_count_query = db.query(Station).join(Location).join(City).filter(City.slug == city_slug)
+    r = await db.execute(stmt)
+    q_rows = r.all()
+
+    cnt_stmt = (
+        select(func.count())
+        .select_from(Station)
+        .join(Location)
+        .join(City)
+        .where(City.slug == city_slug)
+    )
     if blacklist:
-        station_count_query = station_count_query.filter(~Station.device.in_(blacklist))
-    station_count = station_count_query.count()
+        cnt_stmt = cnt_stmt.where(~Station.device.in_(blacklist))
+    r = await db.execute(cnt_stmt)
+    station_count = r.scalar() or 0
 
-    # filter outlier with Quartiles
     data = []
-    for dim, val_list, val_count, s_cnt in q.all():
+    for dim, val_list, val_count, s_cnt in q_rows:
         a = np.array(val_list)
 
         l = np.percentile(a, 100 * (Dimension.ALPHA / 2))
-        r = np.percentile(a, 100 * (1 - (Dimension.ALPHA / 2)))
+        r_p = np.percentile(a, 100 * (1 - (Dimension.ALPHA / 2)))
 
-        b = a[(a >= l) & (a <= r)]
+        b = a[(a >= l) & (a <= r_p)]
 
-        # Only compute mean if array is not empty to avoid numpy warnings
         if len(b) > 0:
             data.append((dim, np.mean(b), val_count, s_cnt))
 
@@ -250,8 +163,8 @@ async def get_average_measurements_by_city(
             "timezone": db_city.tz,
             "time": datetime.now(ZoneInfo(db_city.tz)).replace(second=0, microsecond=0).isoformat(),
             "station_count": station_count,
-            "values":[{
-                "dimension": dim, 
+            "values": [{
+                "dimension": dim,
                 "value": val,
                 "value_count": val_count,
                 "station_count": s_cnt
@@ -260,71 +173,3 @@ async def get_average_measurements_by_city(
     }
 
     return Response(content=json.dumps(j), media_type="application/geo+json")
-
-
-# @router.get("/currentold", tags=["city", "current"])
-# async def get_average_measurements_by_city_old(
-#     city_slug: str = Query(..., description="The name of the city to get the average measurements for."),
-#     db: Session = Depends(get_db)
-# ):
-#     # Suche die Stadt in der Datenbank
-#     city = db.query(City).filter(City.slug == city_slug).first()
-
-#     if not city:
-#         raise HTTPException(status_code=404, detail="City not found")
-
-#     # Überprüfe, ob city.tz gesetzt ist
-#     if city.tz is None:
-#         # Fallback auf eine Standard-Zeitzone, z.B. 'Europe/Vienna'
-#         timezone = ZoneInfo('Europe/Vienna')
-#     else:
-#         # Nutze die Zeitzone der Stadt
-#         timezone = ZoneInfo(city.tz)
-
-#     # Finde alle Stationen, die mit dieser Stadt verknüpft sind
-#     stations = db.query(Station).filter(Station.location.has(city_id=city.id)).all()
-
-#     if not stations:
-#         raise HTTPException(status_code=404, detail="No stations found in this city")
-
-#     # Erstelle eine Liste, um die letzten Messwerte jeder Station zu speichern
-#     last_measurements = []
-
-#     for station in stations:
-#         # Finde die letzte Messung für die Station (nach time_measured)
-#         last_measurement = db.query(Measurement).filter(
-#             Measurement.station_id == station.id
-#         ).order_by(desc(Measurement.time_measured)).first()
-
-#         if last_measurement:
-#             # Füge alle Werte (dimension, value) der letzten Messung hinzu
-#             values = db.query(Values).filter(Values.measurement_id == last_measurement.id).all()
-#             last_measurements.extend(values)
-
-#     if not last_measurements:
-#         raise HTTPException(status_code=404, detail="No measurements found for stations in this city")
-
-#     # Berechne den Durchschnitt der letzten Messwerte pro Dimension
-#     avg_measurements = db.query(
-#         Values.dimension,
-#         func.avg(Values.value).label("avg_value")
-#     ).filter(Values.id.in_([value.id for value in last_measurements]))\
-#      .group_by(Values.dimension)\
-#      .all()
-
-#     # Bereite die Antwort im GeoJSON-Format vor
-#     response = {
-#         "city": city.name,
-#         "time": datetime.now(timezone).isoformat(),
-#         "values": [
-#             {
-#                 "dimension": dimension,
-#                 "name": Dimension.get_name(dimension),
-#                 "average": f"{avg_value:.2f}",
-#                 "unit": Dimension.get_unit(dimension)
-#             }
-#             for dimension, avg_value in avg_measurements
-#         ]
-#     }
-
-#     return response
