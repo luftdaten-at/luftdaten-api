@@ -86,7 +86,6 @@ async def get_or_create_location(db: AsyncSession, lat: float, lon: float, heigh
             country = Country(name=country_name, code=country_code)
             db.add(country)
             await db.commit()
-            await db.refresh(country)
             logging.debug(f"Neues Land erstellt: {country}")
         except Exception as e:
             logging.error(f"Fehler beim Erstellen des Landes '{country_name}': {e}")
@@ -105,7 +104,6 @@ async def get_or_create_location(db: AsyncSession, lat: float, lon: float, heigh
             city = City(name=city_name, country_id=country.id, tz=timezone_str, lat=clat, lon=clon)
             db.add(city)
             await db.commit()
-            await db.refresh(city)
             logging.debug(f"Neue Stadt erstellt: {city}")
 
             cache = get_cities_cache()
@@ -137,7 +135,6 @@ async def get_or_create_location(db: AsyncSession, lat: float, lon: float, heigh
             )
             db.add(location)
             await db.commit()
-            await db.refresh(location)
             logging.debug(f"Neue Location erstellt: {location}")
         except Exception as e:
             logging.error(f"Fehler beim Erstellen der Location: {e}")

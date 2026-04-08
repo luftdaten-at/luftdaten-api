@@ -388,8 +388,8 @@ async def create_station_status(
             message=status.message
         )
         db.add(db_status)
-        await db.commit()
-        await db.refresh(db_status)
+
+    await db.commit()
 
     return {"status": "success"}
 
@@ -437,8 +437,7 @@ async def create_station_data(
             location_id=db_station.location_id
         )
         db.add(db_measurement)
-        await db.commit()
-        await db.refresh(db_measurement)
+        await db.flush()
 
         for dimension, value in sensor_data.data.items():
             if station.calibration_mode:

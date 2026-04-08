@@ -45,8 +45,7 @@ async def get_or_create_station(db: AsyncSession, station: StationDataCreate):
             height=float(station.location.height)
         )
         db.add(new_location)
-        await db.commit()
-        await db.refresh(new_location)
+        await db.flush()
 
         db_station = Station(
             device=station.device,
@@ -58,7 +57,6 @@ async def get_or_create_station(db: AsyncSession, station: StationDataCreate):
         )
         db.add(db_station)
         await db.commit()
-        await db.refresh(db_station)
     else:
         if db_station.apikey != station.apikey:
             raise HTTPException(

@@ -41,7 +41,6 @@ async def sensor_community_import_grouped_by_location(db: AsyncSession, data: di
 
         db.add(station)
         await db.commit()
-        await db.refresh(station)
 
         sensor_model = {v: k for k, v in SensorModel._names.items()}.get(row["sensor"]["sensor_type"]["name"], None)
 
@@ -63,8 +62,7 @@ async def sensor_community_import_grouped_by_location(db: AsyncSession, data: di
                 location_id=loc.id
             )
             db.add(measurement)
-            await db.commit()
-            await db.refresh(measurement)
+            await db.flush()
 
             for val in row['sensordatavalues']:
                 d = Dimension.get_dimension_from_sensor_community_name_import(val['value_type'])
@@ -168,8 +166,7 @@ async def import_station_data(db: AsyncSession, station_data, sensors):
             height=float(station_data['location']['height'])
         )
         db.add(new_location)
-        await db.commit()
-        await db.refresh(new_location)
+        await db.flush()
         logging.debug(f"Neue Location erstellt: {new_location}")
 
         db_station = Station(
@@ -182,7 +179,6 @@ async def import_station_data(db: AsyncSession, station_data, sensors):
         )
         db.add(db_station)
         await db.commit()
-        await db.refresh(db_station)
         logging.debug(f"Neue Station erstellt: {db_station}")
     else:
         logging.debug("Station existiert bereits, prüfe auf Aktualisierungen.")
@@ -244,8 +240,7 @@ async def import_station_data(db: AsyncSession, station_data, sensors):
             location_id=db_station.location_id
         )
         db.add(db_measurement)
-        await db.commit()
-        await db.refresh(db_measurement)
+        await db.flush()
         logging.debug(f"Neue Messung erstellt: {db_measurement}")
 
         for dimension, value in sensor_data['data'].items():
