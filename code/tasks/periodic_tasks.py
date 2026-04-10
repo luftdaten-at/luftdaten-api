@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import requests
-from database import AsyncSessionLocal
+from database import SchedulerAsyncSessionLocal
 from services.data_service import sensor_community_import_grouped_by_location
 from enums import Source
 from utils.cache import refresh_statistics_views, refresh_stations_summary
@@ -33,7 +33,7 @@ def import_sensor_community_data():
             return
 
         async def _run_import():
-            async with AsyncSessionLocal() as db:
+            async with SchedulerAsyncSessionLocal() as db:
                 await sensor_community_import_grouped_by_location(db, data, source=Source.SC)
 
         try:
@@ -52,7 +52,7 @@ def refresh_statistics_cache():
     logger.info("Task 'refresh_statistics_cache' started.")
 
     async def _run():
-        async with AsyncSessionLocal() as db:
+        async with SchedulerAsyncSessionLocal() as db:
             await refresh_statistics_views(db)
 
     try:
@@ -69,7 +69,7 @@ def refresh_stations_summary_cache():
     logger.info("Task 'refresh_stations_summary_cache' started.")
 
     async def _run():
-        async with AsyncSessionLocal() as db:
+        async with SchedulerAsyncSessionLocal() as db:
             await refresh_stations_summary(db)
 
     try:
