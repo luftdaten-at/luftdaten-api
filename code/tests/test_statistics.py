@@ -3,9 +3,12 @@ import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import json
+
 import pytest
 from fastapi.testclient import TestClient
 from main import app
+from routers.statistics import _statistics_snapshot_response
 from models import (
     City, Country, Station, Location, Measurement, Values,
     CalibrationMeasurement, StationStatus
@@ -449,4 +452,40 @@ class TestStatisticsRouter:
         parsed_time = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
         now = datetime.now(timezone.utc)
         assert abs((now - parsed_time).total_seconds()) < 60
+
+
+class TestStatisticsSnapshotHelpers:
+    """Precomputed jsonb snapshot response (used when statistics_endpoint_snapshot exists)."""
+
+    def test_statistics_snapshot_response_sets_timestamp_and_http_cache_headers(self):
+        fixed_now = datetime(2026, 4, 10, 12, 0, 0, tzinfo=timezone.utc)
+        payload = {
+            "totals": {"countries": 1},
+            "active_stations": {"last_hour": 0, "last_24_hours": 0, "last_7_days": 0, "last_30_days": 0},
+            "data_coverage": {},
+            "distribution": {},
+            "dimensions": [],
+        }
+        resp = _statistics_snapshot_response(payload, fixed_now)
+        assert resp.status_code == 200
+        body = json.loads(resp.body)
+        assert body["timestamp"] == fixed_now.isoformat()
+        assert "public" in resp.headers.get("cache-control", "")
+        assert "max-age=3600" in resp.headers.get("cache-control", "")
+        assert resp.headers.get("etag", "").startswith('W/"')
+
+    def test_statistics_snapshot_response_accepts_json_string_payload(self):
+        now = datetime.now(timezone.utc)
+        payload = json.dumps(
+            {
+                "totals": {},
+                "active_stations": {},
+                "data_coverage": {},
+                "distribution": {},
+                "dimensions": [],
+            }
+        )
+        resp = _statistics_snapshot_response(payload, now)
+        body = json.loads(resp.body)
+        assert "timestamp" in body
 

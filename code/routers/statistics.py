@@ -5,6 +5,10 @@ from database import get_db
 from utils.helpers import as_naive_utc
 from dependencies import get_blacklist
 from datetime import datetime, timezone, timedelta
+from typing import Optional
+from starlette.responses import JSONResponse
+import hashlib
+import json
 import math
 from models import (
     Country, City, Location, Station, Measurement,
@@ -13,6 +17,45 @@ from models import (
 from enums import Source, SensorModel, Dimension
 
 router = APIRouter()
+
+_STATISTICS_CACHE_CONTROL = "public, max-age=3600, stale-while-revalidate=120"
+
+
+def _statistics_snapshot_response(payload: object, now: datetime) -> JSONResponse:
+    """Build HTTP response from precomputed jsonb snapshot; timestamp reflects request time."""
+    if isinstance(payload, str):
+        data = json.loads(payload)
+    else:
+        data = json.loads(json.dumps(payload, default=str))
+    out = dict(data)
+    out["timestamp"] = now.isoformat()
+    body_etag = {k: v for k, v in out.items() if k != "timestamp"}
+    etag_val = hashlib.md5(
+        json.dumps(body_etag, sort_keys=True, default=str).encode()
+    ).hexdigest()
+    return JSONResponse(
+        content=out,
+        headers={
+            "Cache-Control": _STATISTICS_CACHE_CONTROL,
+            "ETag": f'W/"{etag_val}"',
+        },
+    )
+
+
+async def _try_load_statistics_snapshot(
+    db: AsyncSession, now: datetime
+) -> Optional[JSONResponse]:
+    try:
+        res = await db.execute(
+            text("SELECT payload FROM statistics_endpoint_snapshot WHERE id = 1")
+        )
+        row = res.first()
+        if row is None or row.payload is None:
+            return None
+        return _statistics_snapshot_response(row.payload, now)
+    except Exception:
+        await db.rollback()
+        return None
 
 
 @router.get("/", tags=["statistics"])
@@ -25,6 +68,11 @@ async def get_statistics(
     one_day_ago = as_naive_utc(now - timedelta(days=1))
     seven_days_ago = as_naive_utc(now - timedelta(days=7))
     thirty_days_ago = as_naive_utc(now - timedelta(days=30))
+
+    if not blacklist:
+        snap = await _try_load_statistics_snapshot(db, now)
+        if snap is not None:
+            return snap
 
     use_materialized_views = not bool(blacklist)
 
