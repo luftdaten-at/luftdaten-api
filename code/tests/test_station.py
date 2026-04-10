@@ -183,6 +183,28 @@ class TestStationRouter:
         assert response.status_code == 404
         assert response.json() == {"detail": "No stations found"}
 
+    def test_get_current_station_data_cache_headers_geojson(self, sample_data):
+        response = client.get("/v1/station/current")
+        assert response.status_code == 200
+        cc = response.headers.get("cache-control", "")
+        assert "public" in cc
+        assert "max-age=60" in cc
+        assert "etag" in response.headers
+
+    def test_get_current_station_data_cache_headers_csv(self, sample_data):
+        response = client.get("/v1/station/current?output_format=csv")
+        assert response.status_code == 200
+        assert "max-age=60" in response.headers.get("cache-control", "")
+        assert "etag" in response.headers
+
+    def test_get_current_station_data_304_if_none_match(self, sample_data):
+        r1 = client.get("/v1/station/current")
+        assert r1.status_code == 200
+        etag = r1.headers["etag"]
+        r2 = client.get("/v1/station/current", headers={"If-None-Match": etag})
+        assert r2.status_code == 304
+        assert r2.content == b""
+
     def test_get_station_info_not_found(self):
         response = client.get("/v1/station/info?station_id=nonexistent")
         assert response.status_code == 404
