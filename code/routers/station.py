@@ -1,12 +1,13 @@
 import csv
+import hashlib
 import json
 import io
 import logging
 import numpy as np
-from fastapi import APIRouter, Depends, Response, HTTPException, Query
+from fastapi import APIRouter, Depends, Response, HTTPException, Query, Request
 from dependencies import get_blacklist
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import func, or_, text, case, select
+from sqlalchemy import func, or_, text, case, select, tuple_
 from sqlalchemy.orm import selectinload
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
@@ -20,6 +21,73 @@ from enums import Precision, OutputFormat, Order, Dimension, CURRENT_TIME_RANGE_
 
 
 router = APIRouter()
+
+_STATION_CURRENT_CACHE_CONTROL = "public, max-age=60, stale-while-revalidate=120"
+
+
+def _if_none_match_etag(if_none_match: str | None, etag: str) -> bool:
+    if not if_none_match:
+        return False
+    for part in if_none_match.split(","):
+        part = part.strip()
+        if part == "*" or part == etag:
+            return True
+    return False
+
+
+def _station_current_cachable_response(
+    content: str, media_type: str, request: Request
+) -> Response:
+    body_bytes = content.encode("utf-8")
+    digest = hashlib.md5(body_bytes).hexdigest()
+    etag = f'W/"{digest}"'
+    headers = {
+        "Cache-Control": _STATION_CURRENT_CACHE_CONTROL,
+        "ETag": etag,
+    }
+    if _if_none_match_etag(request.headers.get("if-none-match"), etag):
+        return Response(status_code=304, headers=headers)
+    return Response(content=content, media_type=media_type, headers=headers)
+
+
+async def _load_current_measurements_batch(
+    db: AsyncSession,
+    stations: list,
+    load_calibration: bool,
+) -> tuple[dict[int, list[Measurement]], dict[int, list[CalibrationMeasurement]]]:
+    pairs = [(s.id, s.last_active) for s in stations]
+    if not pairs:
+        return {}, {}
+
+    stmt = (
+        select(Measurement)
+        .where(tuple_(Measurement.station_id, Measurement.time_measured).in_(pairs))
+        .options(selectinload(Measurement.values))
+    )
+    r = await db.execute(stmt)
+    measurements = list(r.scalars().all())
+
+    by_station: dict[int, list[Measurement]] = defaultdict(list)
+    for m in measurements:
+        by_station[m.station_id].append(m)
+
+    cal_by_station: dict[int, list[CalibrationMeasurement]] = defaultdict(list)
+    if load_calibration:
+        cstmt = (
+            select(CalibrationMeasurement)
+            .where(
+                tuple_(
+                    CalibrationMeasurement.station_id,
+                    CalibrationMeasurement.time_measured,
+                ).in_(pairs)
+            )
+            .options(selectinload(CalibrationMeasurement.values))
+        )
+        cr = await db.execute(cstmt)
+        for cm in cr.scalars().all():
+            cal_by_station[cm.station_id].append(cm)
+
+    return by_station, cal_by_station
 
 
 def _parse_required_station_ids(station_ids: str) -> list[str]:
@@ -226,6 +294,7 @@ async def get_history_station_data(
 
 @router.get("/current", response_class=Response, tags=["station", "current"])
 async def get_current_station_data(
+    request: Request,
     station_ids: str = Query(None, description="Comma-separated list of station device IDs to filter by. If not provided, all active stations are returned."),
     last_active: int = Query(3600, description="Time window in seconds. Stations with last_active within this window are considered active. Default is 3600 seconds (1 hour)."),
     output_format: str = Query("geojson", description="Output format: 'geojson' or 'csv'. Default is 'geojson'."),
@@ -259,19 +328,14 @@ async def get_current_station_data(
     if not stations:
         raise HTTPException(status_code=404, detail="No stations found")
 
+    by_station, cal_by_station = await _load_current_measurements_batch(
+        db, stations, calibration_data
+    )
+
     if output_format == "geojson":
         features = []
         for station in stations:
-            r = await db.execute(
-                select(Measurement)
-                .where(
-                    Measurement.station_id == station.id,
-                    Measurement.time_measured == station.last_active
-                )
-                .options(selectinload(Measurement.values))
-            )
-            measurements = r.scalars().all()
-
+            measurements = by_station.get(station.id, [])
             sensors = []
             for measurement in measurements:
                 values = measurement.values
@@ -282,15 +346,7 @@ async def get_current_station_data(
 
             calibration_sensors = []
             if calibration_data:
-                cr = await db.execute(
-                    select(CalibrationMeasurement)
-                    .where(
-                        CalibrationMeasurement.station_id == station.id,
-                        CalibrationMeasurement.time_measured == station.last_active
-                    )
-                    .options(selectinload(CalibrationMeasurement.values))
-                )
-                for calibration_measurement in cr.scalars().all():
+                for calibration_measurement in cal_by_station.get(station.id, []):
                     calibration_values = calibration_measurement.values
                     calibration_sensors.append({
                         "sensor_model": calibration_measurement.sensor_model,
@@ -314,11 +370,11 @@ async def get_current_station_data(
             if calibration_data and calibration_sensors:
                 features[-1]["properties"]["calibration_sensors"] = calibration_sensors
 
-        content = {
+        payload = {
             "type": "FeatureCollection",
             "features": features,
         }
-        content = json.dumps(content)
+        content = json.dumps(payload)
         media_type = "application/geo+json"
 
     elif output_format == "csv":
@@ -328,16 +384,7 @@ async def get_current_station_data(
         csv_data += "\n"
 
         for station in stations:
-            r = await db.execute(
-                select(Measurement)
-                .where(
-                    Measurement.station_id == station.id,
-                    Measurement.time_measured == station.last_active
-                )
-                .options(selectinload(Measurement.values))
-            )
-            measurements = r.scalars().all()
-
+            measurements = by_station.get(station.id, [])
             for measurement in measurements:
                 values = measurement.values
                 for value in values:
@@ -347,15 +394,7 @@ async def get_current_station_data(
                     csv_data += "\n"
 
             if calibration_data:
-                cr = await db.execute(
-                    select(CalibrationMeasurement)
-                    .where(
-                        CalibrationMeasurement.station_id == station.id,
-                        CalibrationMeasurement.time_measured == station.last_active
-                    )
-                    .options(selectinload(CalibrationMeasurement.values))
-                )
-                for calibration_measurement in cr.scalars().all():
+                for calibration_measurement in cal_by_station.get(station.id, []):
                     calibration_values = calibration_measurement.values
                     for value in calibration_values:
                         csv_data += f"{station.device},{station.location.lat},{station.location.lon},{station.last_active},{station.location.height},{calibration_measurement.sensor_model},{value.dimension},{value.value},{True}\n"
@@ -366,7 +405,7 @@ async def get_current_station_data(
     else:
         return Response(content="Invalid output format", media_type="text/plain", status_code=400)
 
-    return Response(content=content, media_type=media_type)
+    return _station_current_cachable_response(content, media_type, request)
 
 
 @router.post("/status", tags=["station"])
