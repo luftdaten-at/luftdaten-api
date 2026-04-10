@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import func, distinct, text, select, cast, String
-from database import get_db
+from database import get_db, _agent_log, _async_pool_stats
 from utils.helpers import as_naive_utc
 from dependencies import get_blacklist
 from datetime import datetime, timezone, timedelta
@@ -99,6 +99,18 @@ async def get_statistics(
         use_materialized_views = False
 
     if not use_materialized_views:
+        # region agent log
+        _agent_log(
+            "H3",
+            "statistics.py:get_statistics:fallback",
+            "live_count_branch",
+            {
+                "use_materialized_views": use_materialized_views,
+                "blacklist_nonempty": bool(blacklist),
+                "pool": _async_pool_stats(),
+            },
+        )
+        # endregion
         r = await db.execute(select(func.count(Country.id)))
         total_countries = r.scalar() or 0
         r = await db.execute(select(func.count(City.id)))
