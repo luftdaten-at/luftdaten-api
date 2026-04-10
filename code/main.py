@@ -17,6 +17,8 @@ from apscheduler.schedulers.background import BackgroundScheduler
 import atexit
 from tasks.periodic_tasks import import_sensor_community_data, refresh_statistics_cache, refresh_stations_summary_cache
 
+from database import scheduler_async_engine
+
 import os
 import logging
 
@@ -154,6 +156,10 @@ def shutdown_scheduler():
         try:
             scheduler.shutdown()
         finally:
+            try:
+                scheduler_async_engine.sync_engine.dispose()
+            except Exception:
+                pass
             # Restore logger state (though this may not work if logging is already shut down)
             try:
                 scheduler_logger.setLevel(original_level)

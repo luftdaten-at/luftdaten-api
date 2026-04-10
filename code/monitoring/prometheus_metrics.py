@@ -7,7 +7,6 @@ Default HTTP metrics still come from prometheus-fastapi-instrumentator; this mod
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from typing import Any, Optional
 
@@ -15,7 +14,7 @@ from prometheus_client import Counter, Gauge
 from prometheus_fastapi_instrumentator import metrics as instrumentator_metrics
 from sqlalchemy import text
 
-from database import async_engine
+from database import sync_engine
 
 logger = logging.getLogger(__name__)
 
@@ -89,12 +88,8 @@ def update_prometheus_app_gauges(app: Any, scheduler: Optional[Any] = None) -> N
         LUFTDATEN_SCHEDULER_JOBS.set(0)
 
     try:
-
-        async def _ping():
-            async with async_engine.connect() as conn:
-                await conn.execute(text("SELECT 1"))
-
-        asyncio.run(_ping())
+        with sync_engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
         LUFTDATEN_DB_UP.set(1)
     except Exception:
         LUFTDATEN_DB_UP.set(0)

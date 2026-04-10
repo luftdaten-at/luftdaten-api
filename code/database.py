@@ -3,6 +3,7 @@ import os
 from sqlalchemy import create_engine
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import declarative_base
+from sqlalchemy.pool import NullPool
 
 # Umgebungsvariablen auslesen
 DB_USER = os.getenv("POSTGRES_USER", "")
@@ -17,6 +18,19 @@ ASYNC_DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg:/
 async_engine = create_async_engine(ASYNC_DATABASE_URL)
 AsyncSessionLocal = async_sessionmaker(
     async_engine,
+    class_=AsyncSession,
+    expire_on_commit=False,
+    autocommit=False,
+    autoflush=False,
+)
+
+# APScheduler runs asyncio.run() in worker threads; do not share the app pool across event loops.
+scheduler_async_engine = create_async_engine(
+    ASYNC_DATABASE_URL,
+    poolclass=NullPool,
+)
+SchedulerAsyncSessionLocal = async_sessionmaker(
+    scheduler_async_engine,
     class_=AsyncSession,
     expire_on_commit=False,
     autocommit=False,
