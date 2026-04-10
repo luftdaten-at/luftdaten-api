@@ -30,6 +30,8 @@ services:
       start_period: 40s
   db:
     image: postgres:16
+    # Default 64MB /dev/shm is too small for Postgres under load (avoids DiskFullError on shm resize)
+    shm_size: "256mb"
     networks:
       - default
     volumes:
