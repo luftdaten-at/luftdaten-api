@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from prometheus_fastapi_instrumentator import Instrumentator
+from prometheus_fastapi_instrumentator import Instrumentator, metrics
 from monitoring.prometheus_metrics import (
     instrumentation_record_area,
     update_prometheus_app_gauges,
@@ -201,7 +201,10 @@ app.include_router(health_router, prefix="/health")
 app.include_router(statistics_router, prefix="/statistics")
 app.include_router(monitor_router, prefix="/monitor")
 
-# Prometheus: tuned defaults + per-area counter; scrape noise excluded via handler regex
+# Prometheus: default HTTP metrics (http_requests_total, latency histograms) plus
+# custom luftdaten_* counter. If the instrumentation list is non-empty, the
+# instrumentator does NOT auto-append metrics.default() — only .add(...) runs,
+# so Grafana queries against http_requests_total would find no series.
 _LATENCY_LOWR_BUCKETS = (0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0)
 Instrumentator(
     excluded_handlers=[
@@ -211,7 +214,11 @@ Instrumentator(
     ],
     should_round_latency_decimals=True,
     round_latency_decimals=4,
-).add(instrumentation_record_area).instrument(
+).add(
+    metrics.default(latency_lowr_buckets=_LATENCY_LOWR_BUCKETS),
+).add(
+    instrumentation_record_area,
+).instrument(
     app,
     latency_lowr_buckets=_LATENCY_LOWR_BUCKETS,
 ).expose(app, endpoint="/metrics")
