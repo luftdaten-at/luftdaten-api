@@ -24,7 +24,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum by (handler) (rate(http_requests_total{job=\"luftdaten-api\"}[5m]))",
+          "expr": "sum by (handler) (rate(http_requests_total{job=\"$api_job\"}[5m]))",
           "legendFormat": "{{handler}}",
           "refId": "A"
         }
@@ -46,7 +46,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (area) (rate(luftdaten_http_requests_total{job=\"luftdaten-api\"}[5m]))",
+          "expr": "sum by (area) (rate(luftdaten_http_requests_total{job=\"$api_job\"}[5m]))",
           "legendFormat": "{{area}}",
           "refId": "A"
         }
@@ -68,7 +68,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (handler) (rate(http_requests_total{job=\"luftdaten-api\",status=~\"4xx|5xx\"}[5m]))",
+          "expr": "sum by (handler) (rate(http_requests_total{job=\"$api_job\",status=~\"4xx|5xx\"}[5m]))",
           "legendFormat": "{{handler}}",
           "refId": "A"
         }
@@ -90,17 +90,17 @@
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.50, sum(rate(http_request_duration_highr_seconds_bucket{job=\"luftdaten-api\"}[5m])) by (le))",
+          "expr": "histogram_quantile(0.50, sum(rate(http_request_duration_highr_seconds_bucket{job=\"$api_job\"}[5m])) by (le))",
           "legendFormat": "p50",
           "refId": "A"
         },
         {
-          "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_highr_seconds_bucket{job=\"luftdaten-api\"}[5m])) by (le))",
+          "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_highr_seconds_bucket{job=\"$api_job\"}[5m])) by (le))",
           "legendFormat": "p95",
           "refId": "B"
         },
         {
-          "expr": "histogram_quantile(0.99, sum(rate(http_request_duration_highr_seconds_bucket{job=\"luftdaten-api\"}[5m])) by (le))",
+          "expr": "histogram_quantile(0.99, sum(rate(http_request_duration_highr_seconds_bucket{job=\"$api_job\"}[5m])) by (le))",
           "legendFormat": "p99",
           "refId": "C"
         }
@@ -122,7 +122,7 @@
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, sum by (le, handler) (rate(http_request_duration_seconds_bucket{job=\"luftdaten-api\"}[5m])))",
+          "expr": "histogram_quantile(0.95, sum by (le, handler) (rate(http_request_duration_seconds_bucket{job=\"$api_job\"}[5m])))",
           "legendFormat": "{{handler}}",
           "refId": "A"
         }
@@ -154,7 +154,7 @@
       },
       "targets": [
         {
-          "expr": "luftdaten_db_up{job=\"luftdaten-api\"}",
+          "expr": "luftdaten_db_up{job=\"$api_job\"}",
           "legendFormat": "db_up",
           "refId": "A"
         }
@@ -174,7 +174,7 @@
       },
       "targets": [
         {
-          "expr": "luftdaten_blacklist_size{job=\"luftdaten-api\"}",
+          "expr": "luftdaten_blacklist_size{job=\"$api_job\"}",
           "legendFormat": "blacklist",
           "refId": "A"
         }
@@ -194,7 +194,7 @@
       },
       "targets": [
         {
-          "expr": "luftdaten_scheduler_jobs{job=\"luftdaten-api\"}",
+          "expr": "luftdaten_scheduler_jobs{job=\"$api_job\"}",
           "legendFormat": "jobs",
           "refId": "A"
         }
@@ -214,7 +214,7 @@
       },
       "targets": [
         {
-          "expr": "sum(rate(http_requests_total{job=\"luftdaten-api\"}[5m]))",
+          "expr": "sum(rate(http_requests_total{job=\"$api_job\"}[5m]))",
           "legendFormat": "total",
           "refId": "A"
         }
@@ -247,7 +247,7 @@
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "editorMode": "code",
-          "expr": "sum by (handler, status) (rate(http_requests_total{job=\"luftdaten-api\"}[5m]))",
+          "expr": "sum by (handler, status) (rate(http_requests_total{job=\"$api_job\"}[5m]))",
           "legendFormat": "{{handler}} {{status}}",
           "refId": "A"
         }
@@ -279,7 +279,7 @@
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "editorMode": "code",
           "exemplar": false,
-          "expr": "sort_desc(sum by (handler, method, status) (increase(http_requests_total{job=\"luftdaten-api\"}[$__range])))",
+          "expr": "sort_desc(sum by (handler, method, status) (increase(http_requests_total{job=\"$api_job\"}[$__range])))",
           "format": "table",
           "instant": true,
           "refId": "A"
@@ -327,7 +327,7 @@
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "editorMode": "code",
           "exemplar": false,
-          "expr": "sort_desc(sum by (handler, method, status) (rate(http_requests_total{job=\"luftdaten-api\"}[5m])))",
+          "expr": "sort_desc(sum by (handler, method, status) (rate(http_requests_total{job=\"$api_job\"}[5m])))",
           "format": "table",
           "instant": true,
           "refId": "A"
@@ -378,7 +378,7 @@
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "editorMode": "code",
-          "expr": "topk(25, sum by (handler) (rate(http_requests_total{job=\"luftdaten-api\"}[5m])))",
+          "expr": "topk(25, sum by (handler) (rate(http_requests_total{job=\"$api_job\"}[5m])))",
           "instant": true,
           "legendFormat": "{{handler}}",
           "refId": "A"
@@ -410,12 +410,32 @@
   "refresh": "30s",
   "schemaVersion": 39,
   "tags": ["luftdaten", "api"],
-  "templating": { "list": [] },
+  "templating": {
+    "list": [
+      {
+        "current": { "selected": true, "text": "luftdaten-api", "value": "luftdaten-api" },
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "definition": "label_values(http_requests_total, job)",
+        "hide": 0,
+        "includeAll": false,
+        "label": "API Prometheus job",
+        "multi": false,
+        "name": "api_job",
+        "options": [],
+        "query": "label_values(http_requests_total, job)",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
+      }
+    ]
+  },
   "time": { "from": "now-6h", "to": "now" },
   "timepicker": {},
   "timezone": "",
   "title": "Luftdaten API",
   "uid": "luftdaten-api",
-  "version": 1,
+  "version": 2,
   "weekStart": ""
 }
