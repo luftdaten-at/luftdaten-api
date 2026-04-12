@@ -269,9 +269,17 @@ class TestStationRouter:
             "1": {"type": 1, "data": {"2": 5.0, "3": 6.0}}
         }
 
-        response = client.post("/v1/station/data/", json={"station": station_data, "sensors": sensors})
+        response = client.post("/v1/station/data", json={"station": station_data, "sensors": sensors})
         assert response.status_code == 200
         assert response.json() == {"status": "success"}
+
+        # Trailing slash must hit the handler directly (no 307); use another device to avoid duplicate measurement
+        station_data_slash = {**station_data, "device": "test_device_trailing_slash"}
+        response_slash = client.post(
+            "/v1/station/data/", json={"station": station_data_slash, "sensors": sensors}
+        )
+        assert response_slash.status_code == 200
+        assert response_slash.json() == {"status": "success"}
 
         db = TestSyncSessionLocal()
         try:
@@ -314,6 +322,14 @@ class TestStationRouter:
             response = client.post("/v1/station/status", json={"station": station_data, "status_list": status_list})
             assert response.status_code == 200
             assert response.json() == {"status": "success"}
+
+            station_status_slash = {**station_data, "device": "test_device_status_slash"}
+            response_slash = client.post(
+                "/v1/station/status/",
+                json={"station": station_status_slash, "status_list": status_list},
+            )
+            assert response_slash.status_code == 200
+            assert response_slash.json() == {"status": "success"}
 
     def test_get_all_stations_no_data(self):
         response = client.get("/v1/station/all")

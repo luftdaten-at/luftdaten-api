@@ -409,6 +409,7 @@ async def get_current_station_data(
 
 
 @router.post("/status", tags=["station"])
+@router.post("/status/", tags=["station"], include_in_schema=False)
 async def create_station_status(
     station: StationDataCreate,
     status_list: list[StationStatusCreate],
@@ -434,6 +435,7 @@ async def create_station_status(
 
 
 @router.post("/data", tags=["station"])
+@router.post("/data/", tags=["station"], include_in_schema=False)
 async def create_station_data(
     station: StationDataCreate,
     sensors: SensorsCreate,
