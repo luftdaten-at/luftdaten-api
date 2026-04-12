@@ -98,6 +98,7 @@ Stations can be excluded from API responses via a blacklist config file. Blackli
 - Grafana: http://localhost:3000 (default login: admin/admin) — datasource and dashboard **Luftdaten API** are provisioned from `monitoring/grafana/`
 - Prometheus: http://localhost:9090 — config in `monitoring/prometheus.yml`, optional recording rules in `monitoring/prometheus/rules.yml`
 - Grafana panels filter metrics with `job="<name>"`. The **Luftdaten API** dashboard exposes **API Prometheus job** (from `label_values(http_requests_total, job)`); pick the value that matches your scrape config’s `job_name` (default in repo: `luftdaten-api`). If panels show *No data*, check **Status → Targets** in Prometheus and run `http_requests_total` in **Graph** to see the real `job` label. The app must register **`metrics.default()`** alongside the custom `luftdaten_*` instrumentation (see [`code/main.py`](code/main.py)); otherwise `http_requests_total` and latency histograms are never emitted and Grafana stays empty regardless of `job`.
+- **`handler="none"`** for most traffic: prometheus-fastapi-instrumentator resolves the route **before** inner middleware runs. `/v1/...` must be stripped **outside** that middleware (see `VersionPrefixMiddleware` in [`code/main.py`](code/main.py)); otherwise routes registered as `/station/...` never match and Grafana shows `none` instead of `/station/current`, etc.
 
 #### Deployment
 

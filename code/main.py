@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 from prometheus_fastapi_instrumentator import Instrumentator, metrics
 from monitoring.prometheus_metrics import (
     instrumentation_record_area,
@@ -68,6 +69,23 @@ def _cors_allowlist():
 
 
 _cors_origins, _cors_credentials = _cors_allowlist()
+
+
+class VersionPrefixMiddleware(BaseHTTPMiddleware):
+    """Strip /v1 from the URL path for routing.
+
+    Must run **outside** prometheus-fastapi-instrumentator: that middleware reads
+    `get_route_name(request)` before `call_next`, while routes are registered as
+    `/station/...` not `/v1/station/...`. If /v1 is stripped only in an inner
+    layer, handler labels become `none` for all versioned API traffic.
+    """
+
+    async def dispatch(self, request: Request, call_next):
+        path = request.url.path
+        if path.startswith("/v1"):
+            request.scope["path"] = path[3:] or "/"
+        return await call_next(request)
+
 
 app = FastAPI(
     title="Luftdaten.at API",
@@ -186,14 +204,6 @@ def load_station_blacklist():
     refresh_prometheus_gauges()
 
 
-# Middleware to add /v1 prefix to all routes
-@app.middleware("http")
-async def add_version_prefix(request: Request, call_next):
-    if request.url.path.startswith("/v1"):
-        request.scope["path"] = request.url.path[3:]  # Remove '/v1' from the path
-    response = await call_next(request)
-    return response
-
 # Register routers
 app.include_router(station_router, prefix="/station")
 app.include_router(city_router, prefix="/city")
@@ -222,6 +232,9 @@ Instrumentator(
     app,
     latency_lowr_buckets=_LATENCY_LOWR_BUCKETS,
 ).expose(app, endpoint="/metrics")
+
+# Outermost: strip /v1 before instrumentator resolves route templates for metrics.
+app.add_middleware(VersionPrefixMiddleware)
 
 # Set scheduler reference for health checks
 set_scheduler(scheduler)
