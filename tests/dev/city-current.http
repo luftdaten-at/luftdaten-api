@@ -1,0 +1,4 @@
+# API test request for the endpoint /city/current/
+# 
+
+GET http://localhost/v1/city/current?city_slug=wien HTTP/1.1

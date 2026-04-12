@@ -1,0 +1,4 @@
+# API test request for the endpoint /city/all/
+# 
+
+GET http://localhost/v1/city/all HTTP/1.1
