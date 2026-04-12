@@ -76,7 +76,10 @@ services:
     image: prometheuscommunity/postgres-exporter:latest
     restart: unless-stopped
     environment:
-      DATA_SOURCE_URI: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-postgres}?sslmode=disable
+      # DATA_SOURCE_URI must be host:port/db?params only (no postgresql://, no user:pass).
+      DATA_SOURCE_URI: db:5432/${POSTGRES_DB:-postgres}?sslmode=disable
+      DATA_SOURCE_USER: ${POSTGRES_USER:-postgres}
+      DATA_SOURCE_PASS: ${POSTGRES_PASSWORD}
     env_file:
       - .env
     depends_on:
@@ -108,8 +111,9 @@ services:
       - monitoring
     image: grafana/grafana:latest
     restart: unless-stopped
+    # Grafana listens on 3000 by default; Traefik must target that port (not 80).
     expose:
-      - 80
+      - "3000"
     env_file:
       - .env
     volumes:
@@ -123,7 +127,7 @@ services:
       - "traefik.http.routers.luftdaten-api-staging-grafana.tls=true"
       - "traefik.http.routers.luftdaten-api-staging-grafana.tls.certresolver=https"
       - "traefik.http.routers.luftdaten-api-staging-grafana.service=luftdaten-api-staging-grafana"
-      - "traefik.http.services.luftdaten-api-staging-grafana.loadbalancer.server.port=80"
+      - "traefik.http.services.luftdaten-api-staging-grafana.loadbalancer.server.port=3000"
       - "traefik.http.routers.luftdaten-api-staging-grafana.middlewares=default@file"
     depends_on:
       - prometheus

@@ -78,6 +78,8 @@ Stations can be excluded from API responses via a blacklist config file. Blackli
 - Invalid JSON → startup fails
 - Blacklisted stations return 404 on `/station/info`; they are filtered from all other endpoints
 
+**Station ingest (measurements / status):** Use **POST** to `/v1/station/data` and `/v1/station/status` with the JSON body shape from OpenAPI (`/docs`). **GET** on these paths returns **405** — they will not show up as successful “reads” in traffic summaries. With or without a **trailing slash** is supported (a slash-only route used to **307**-redirect and break some embedded HTTP stacks). Set **`LOG_STATION_INGEST=true`** in `.env` to log each ingest attempt (`path` + HTTP status, including **422**).
+
 #### Monitoring
 
 **Built-in monitor endpoint** (`GET /v1/monitor`):
@@ -118,7 +120,7 @@ Optional **monitoring** (Prometheus, Grafana, postgres_exporter): copy `monitori
 
     docker compose -f docker-compose.prod.yml --profile monitoring up -d
 
-Production example compose exposes Grafana via Traefik at `grafana.staging.api.luftdaten.at` (override with `GRAFANA_ROOT_URL` in `.env` if your host differs); point DNS to your server and ensure TLS/DNS challenge matches your Traefik setup.
+Production example compose exposes Grafana via Traefik at `grafana.staging.api.luftdaten.at` (override with `GF_SERVER_ROOT_URL` in `.env` if your host differs). Traefik’s `loadbalancer.server.port` for Grafana must be **3000** (Grafana’s default HTTP port), not 80 — otherwise Traefik returns **502 Bad Gateway**.
 
 Create database structure:
     

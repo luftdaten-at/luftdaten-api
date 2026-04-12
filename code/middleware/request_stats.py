@@ -4,6 +4,8 @@ Request statistics middleware for API usage tracking.
 Increments in-memory counters per request (path, method, status).
 Excludes monitor and metrics endpoints from tracking.
 """
+import logging
+import os
 import threading
 from collections import defaultdict
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -18,6 +20,12 @@ _requests_by_status: dict[str, int] = defaultdict(int)
 
 # Path prefixes to exclude from stats (monitoring endpoints)
 _EXCLUDED_PREFIXES = ("/monitor", "/metrics", "/health")
+
+logger = logging.getLogger(__name__)
+
+_STATION_INGEST_PATHS = frozenset(
+    ("/station/data", "/station/data/", "/station/status", "/station/status/")
+)
 
 
 def _should_track(path: str) -> bool:
@@ -65,4 +73,10 @@ class RequestStatsMiddleware(BaseHTTPMiddleware):
         method = request.method
         status = response.status_code
         record_request(path, method, status)
+        if (
+            os.getenv("LOG_STATION_INGEST", "").lower() in ("1", "true", "yes")
+            and method == "POST"
+            and path in _STATION_INGEST_PATHS
+        ):
+            logger.info("station_ingest POST path=%s status=%s", path, status)
         return response
