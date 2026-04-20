@@ -58,42 +58,46 @@ async def _try_load_statistics_snapshot(
         return None
 
 
+async def _blacklisted_station_pk_ids(db: AsyncSession, blacklist: frozenset[str]) -> list[int]:
+    """Primary keys for blacklisted devices (small list → ``IN (id1,…)`` in follow-up SQL)."""
+    if not blacklist:
+        return []
+    r = await db.execute(select(Station.id).where(Station.device.in_(blacklist)))
+    return [row[0] for row in r.all()]
+
+
 async def _counts_for_blacklisted_devices(
     db: AsyncSession, blacklist: frozenset[str]
 ) -> dict[str, int]:
-    """Counts only rows tied to blacklisted devices (IN + indexes). Avoids full-table NOT IN scans."""
+    """Counts rows for blacklisted stations only, using ``station_id IN (…pk…)`` for index-friendly plans."""
     if not blacklist:
         return {"stations": 0, "measurements": 0, "calibration": 0, "values": 0, "statuses": 0}
-    r = await db.execute(select(func.count(Station.id)).where(Station.device.in_(blacklist)))
-    stations = int(r.scalar() or 0)
+    ids = await _blacklisted_station_pk_ids(db, blacklist)
+    if not ids:
+        return {"stations": 0, "measurements": 0, "calibration": 0, "values": 0, "statuses": 0}
+
+    stations = len(ids)
     r = await db.execute(
-        select(func.count(Measurement.id))
-        .select_from(Measurement)
-        .join(Station, Measurement.station_id == Station.id)
-        .where(Station.device.in_(blacklist))
+        select(func.count(Measurement.id)).where(Measurement.station_id.in_(ids))
     )
     measurements = int(r.scalar() or 0)
     r = await db.execute(
-        select(func.count(CalibrationMeasurement.id))
-        .select_from(CalibrationMeasurement)
-        .join(Station, CalibrationMeasurement.station_id == Station.id)
-        .where(Station.device.in_(blacklist))
+        select(func.count(CalibrationMeasurement.id)).where(
+            CalibrationMeasurement.station_id.in_(ids)
+        )
     )
     calibration = int(r.scalar() or 0)
-    r = await db.execute(
-        select(func.count(Values.id))
-        .select_from(Values)
-        .join(Measurement, Values.measurement_id == Measurement.id)
-        .join(Station, Measurement.station_id == Station.id)
-        .where(Station.device.in_(blacklist))
-    )
-    values = int(r.scalar() or 0)
-    r = await db.execute(
-        select(func.count(StationStatus.id))
-        .select_from(StationStatus)
-        .join(Station, StationStatus.station_id == Station.id)
-        .where(Station.device.in_(blacklist))
-    )
+    # One COUNT(values) with a huge hash join was ~60s in prod; count per station_id (index).
+    values = 0
+    for sid in ids:
+        r = await db.execute(
+            select(func.count(Values.id))
+            .select_from(Values)
+            .join(Measurement, Values.measurement_id == Measurement.id)
+            .where(Measurement.station_id == sid)
+        )
+        values += int(r.scalar() or 0)
+    r = await db.execute(select(func.count(StationStatus.id)).where(StationStatus.station_id.in_(ids)))
     statuses = int(r.scalar() or 0)
     return {
         "stations": stations,
@@ -141,13 +145,14 @@ async def _blacklist_measurement_timeframe_counts(
 ) -> tuple[int, int, int]:
     if not blacklist:
         return (0, 0, 0)
+    ids = await _blacklisted_station_pk_ids(db, blacklist)
+    if not ids:
+        return (0, 0, 0)
 
     async def _cnt(since):
-        q = (
-            select(func.count(Measurement.id))
-            .select_from(Measurement)
-            .join(Station, Measurement.station_id == Station.id)
-            .where(Station.device.in_(blacklist), Measurement.time_measured >= since)
+        q = select(func.count(Measurement.id)).where(
+            Measurement.station_id.in_(ids),
+            Measurement.time_measured >= since,
         )
         r = await db.execute(q)
         return int(r.scalar() or 0)
