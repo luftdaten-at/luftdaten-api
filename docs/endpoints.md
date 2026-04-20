@@ -11,7 +11,7 @@
 
 - **GET responses:** Instants are serialized as **ISO-8601 with `Europe/Vienna` offset** (e.g. `2026-04-10T14:30:00+02:00`) unless noted otherwise.
 - **POST `/v1/station/data` (and related writes):** `time` must represent the measurement instant in **UTC**. Prefer a `Z` suffix or explicit offset (`+00:00`). If the value has **no timezone**, it is interpreted as **UTC wall clock** (not local Vienna).
-- **sensor.community static import** (`data.json`): timestamps in that feed are parsed as **local time in `Europe/Vienna`**, then stored as UTC-naive in the database (internal batch job only).
+- **sensor.community static import** (`data.json`): `timestamp` strings (`YYYY-MM-DD HH:MM:SS`, no offset) are interpreted as **UTC** wall clock, then stored as UTC-naive in the database (internal batch job only).
 
 ---
 
