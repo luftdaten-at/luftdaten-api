@@ -1,5 +1,4 @@
 import logging
-from zoneinfo import ZoneInfo
 
 from fastapi import HTTPException
 from sqlalchemy import select
@@ -8,9 +7,6 @@ from sqlalchemy.orm import selectinload
 from models import Station, Measurement, Values, Location
 from datetime import datetime, timezone
 from utils import get_or_create_location, float_default, as_naive_utc, max_as_naive_utc
-
-# sensor.community static feed timestamps are local wall clock (Europe/Vienna operational context).
-_SC_DATA_JSON_TZ = ZoneInfo("Europe/Vienna")
 from enums import Dimension, SensorModel
 
 
@@ -28,8 +24,9 @@ async def sensor_community_import_grouped_by_location(db: AsyncSession, data: di
         r = await db.execute(select(Station).where(Station.location_id == loc.id))
         station = r.scalar_one_or_none()
 
-        naive_local = datetime.strptime(row["timestamp"], "%Y-%m-%d %H:%M:%S")
-        timestamp = as_naive_utc(naive_local.replace(tzinfo=_SC_DATA_JSON_TZ))
+        # Feed uses ``YYYY-MM-DD HH:MM:SS`` with no offset; values align with server UTC (see Sensor.Community / feinstaub-api).
+        naive_utc_wall = datetime.strptime(row["timestamp"], "%Y-%m-%d %H:%M:%S")
+        timestamp = as_naive_utc(naive_utc_wall.replace(tzinfo=timezone.utc))
 
         if not station:
             station = Station(

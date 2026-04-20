@@ -6,6 +6,7 @@ luftdaten-api ist an open source database for air quality data build on the Fast
 ## Documentation
 
 - **HTTP API (all endpoints):** [docs/endpoints.md](docs/endpoints.md) and [docs/README.md](docs/README.md) (links to interactive OpenAPI).
+- **Database schema:** [docs/database/README.md](docs/database/README.md) (tables, materialized views, indexes).
 
 ### Development
 Environment variables: copy **`.env.example`** to **`.env`** and adjust (database credentials, `DB_HOST`, optional `LOG_LEVEL`, monitoring vars for prod).
