@@ -1,4 +1,6 @@
 import logging
+from zoneinfo import ZoneInfo
+
 from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -6,6 +8,9 @@ from sqlalchemy.orm import selectinload
 from models import Station, Measurement, Values, Location
 from datetime import datetime, timezone
 from utils import get_or_create_location, float_default, as_naive_utc, max_as_naive_utc
+
+# sensor.community static feed timestamps are local wall clock (Europe/Vienna operational context).
+_SC_DATA_JSON_TZ = ZoneInfo("Europe/Vienna")
 from enums import Dimension, SensorModel
 
 
@@ -23,9 +28,8 @@ async def sensor_community_import_grouped_by_location(db: AsyncSession, data: di
         r = await db.execute(select(Station).where(Station.location_id == loc.id))
         station = r.scalar_one_or_none()
 
-        timestamp = as_naive_utc(
-            datetime.strptime(row['timestamp'], "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
-        )
+        naive_local = datetime.strptime(row["timestamp"], "%Y-%m-%d %H:%M:%S")
+        timestamp = as_naive_utc(naive_local.replace(tzinfo=_SC_DATA_JSON_TZ))
 
         if not station:
             station = Station(
@@ -138,6 +142,7 @@ async def process_and_import_data(db: AsyncSession, data, source):
 
 
 async def import_station_data(db: AsyncSession, station_data, sensors):
+    """Generic ingest: ``time`` is normalized with ``as_naive_utc`` (naive = UTC wall clock)."""
     logging.debug(f"Importiere Stationsdaten: {station_data}")
     logging.debug(f"Sensordaten: {sensors}")
 

@@ -8,10 +8,8 @@ from sqlalchemy import func, distinct, select, cast, String
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from database import get_db
-from utils.helpers import as_naive_utc
+from utils.helpers import as_naive_utc, format_datetime_vienna_iso
 from datetime import datetime, timezone, timedelta
-from zoneinfo import ZoneInfo
-
 from models import City, Country, Station, Measurement, Values, Location
 from enums import Dimension
 from utils.response_cache import get_cities_cache
@@ -161,7 +159,9 @@ async def get_average_measurements_by_city(
             "city_slug": db_city.slug,
             "country": db_city.country.name,
             "timezone": db_city.tz,
-            "time": datetime.now(ZoneInfo(db_city.tz)).replace(second=0, microsecond=0).isoformat(),
+            "time": format_datetime_vienna_iso(
+                datetime.now(timezone.utc).replace(second=0, microsecond=0)
+            ),
             "station_count": station_count,
             "values": [{
                 "dimension": dim,

@@ -18,7 +18,14 @@ from collections import defaultdict
 
 from models import Station, Location, Measurement, CalibrationMeasurement, Values, StationStatus, City
 from schemas import StationDataCreate, SensorsCreate, StationStatusCreate
-from utils import get_or_create_station, standard_output_to_csv, standard_output_to_json, as_naive_utc, max_as_naive_utc
+from utils import (
+    get_or_create_station,
+    standard_output_to_csv,
+    standard_output_to_json,
+    as_naive_utc,
+    max_as_naive_utc,
+    format_datetime_vienna_iso,
+)
 from enums import Precision, OutputFormat, Order, Dimension, CURRENT_TIME_RANGE_MINUTES
 
 
@@ -171,13 +178,15 @@ async def get_calibration_data(
             measurements.extend(mr.scalars().all())
         for m in measurements:
             for v in m.values:
-                csv_lines.append(','.join(str(x) for x in [
-                    m.station.device,
-                    m.sensor_model,
-                    v.dimension,
-                    v.value,
-                    m.time_measured,
-                ]))
+                csv_lines.append(','.join(
+                    [
+                        m.station.device,
+                        str(m.sensor_model),
+                        str(v.dimension),
+                        str(v.value),
+                        format_datetime_vienna_iso(m.time_measured) or "",
+                    ]
+                ))
     else:
         for station in stations:
             csv_lines.append(str(station.device))
@@ -209,7 +218,7 @@ async def get_station_info(
     measurements = r.scalars().all()
     j = {
         "station": {
-            "time": station.last_active.isoformat(),
+            "time": format_datetime_vienna_iso(station.last_active),
             "device": station.device,
             "firmware": station.firmware,
             "location": {
@@ -321,7 +330,7 @@ async def get_history_station_data(
 
     csv_out = "timestamp,sid,latitude,longitude,pm1,pm25,pm10\n"
     csv_out += "\n".join(
-        ",".join([time.isoformat()] + [str(o) for o in other])
+        ",".join([format_datetime_vienna_iso(time) or ""] + [str(o) for o in other])
         for time, *other in rows
     )
 
@@ -397,7 +406,7 @@ async def get_current_station_data(
                 },
                 "properties": {
                     "device": station.device,
-                    "time": str(station.last_active),
+                    "time": format_datetime_vienna_iso(station.last_active),
                     "height": station.location.height,
                     "sensors": sensors
                 }
@@ -424,7 +433,7 @@ async def get_current_station_data(
             for measurement in measurements:
                 values = measurement.values
                 for value in values:
-                    csv_data += f"{station.device},{station.location.lat},{station.location.lon},{station.last_active},{station.location.height},{measurement.sensor_model},{value.dimension},{value.value}"
+                    csv_data += f"{station.device},{station.location.lat},{station.location.lon},{format_datetime_vienna_iso(station.last_active)},{station.location.height},{measurement.sensor_model},{value.dimension},{value.value}"
                     if calibration_data:
                         csv_data += f',{False}'
                     csv_data += "\n"
@@ -433,7 +442,7 @@ async def get_current_station_data(
                 for calibration_measurement in cal_by_station.get(station.id, []):
                     calibration_values = calibration_measurement.values
                     for value in calibration_values:
-                        csv_data += f"{station.device},{station.location.lat},{station.location.lon},{station.last_active},{station.location.height},{calibration_measurement.sensor_model},{value.dimension},{value.value},{True}\n"
+                        csv_data += f"{station.device},{station.location.lat},{station.location.lon},{format_datetime_vienna_iso(station.last_active)},{station.location.height},{calibration_measurement.sensor_model},{value.dimension},{value.value},{True}\n"
 
         content = csv_data
         media_type = "text/csv"
@@ -532,7 +541,8 @@ async def create_station_data(
 
             db.add(db_value)
 
-    db_station.last_active = max_as_naive_utc(db_station.last_active, station.time)
+    measured_wall = as_naive_utc(station.time)
+    db_station.last_active = max_as_naive_utc(db_station.last_active, measured_wall)
 
     await db.commit()
 
@@ -771,7 +781,9 @@ async def get_all_stations(
         for station_data in result:
             json_station = {
                 "id": station_data["id"],
-                "last_active": station_data["last_active"].isoformat() if station_data["last_active"] else None,
+                "last_active": format_datetime_vienna_iso(station_data["last_active"])
+                if station_data["last_active"]
+                else None,
                 "location": station_data["location"],
                 "measurements_count": station_data["measurements_count"]
             }
@@ -784,9 +796,11 @@ async def get_all_stations(
     writer.writerow(["id", "last_active", "location_lat", "location_lon", "measurements_count"])
 
     for station in result:
+        la = station["last_active"]
+        la_out = format_datetime_vienna_iso(la) if la is not None else ""
         writer.writerow([
             station["id"],
-            station["last_active"],
+            la_out,
             station["location"]["lat"],
             station["location"]["lon"],
             station["measurements_count"]

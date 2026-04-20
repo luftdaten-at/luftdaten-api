@@ -1,9 +1,6 @@
 name: Build and Publish Docker Image for Staging
 
 on:
-  push:
-    branches:
-      - main
   pull_request:
     branches:
       - main

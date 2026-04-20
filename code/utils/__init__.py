@@ -15,7 +15,7 @@ from .geocoding import reverse_geocode, get_or_create_location
 from .stations import get_or_create_station
 from .formatters import standard_output_to_csv, standard_output_to_json
 from .http import download_csv
-from .helpers import float_default, as_naive_utc, max_as_naive_utc
+from .helpers import float_default, as_naive_utc, max_as_naive_utc, format_datetime_vienna_iso
 from .cache import refresh_statistics_views, refresh_stations_summary
 from .response_cache import get_cities_cache, get_stations_cache, get_statistics_cache
 
@@ -29,6 +29,7 @@ __all__ = [
     'float_default',
     'as_naive_utc',
     'max_as_naive_utc',
+    'format_datetime_vienna_iso',
     'refresh_statistics_views',
     'refresh_stations_summary',
     'get_cities_cache',
