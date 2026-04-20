@@ -77,26 +77,33 @@ async def _counts_for_blacklisted_devices(
         return {"stations": 0, "measurements": 0, "calibration": 0, "values": 0, "statuses": 0}
 
     stations = len(ids)
-    r = await db.execute(
-        select(func.count(Measurement.id)).where(Measurement.station_id.in_(ids))
-    )
-    measurements = int(r.scalar() or 0)
-    r = await db.execute(
-        select(func.count(CalibrationMeasurement.id)).where(
-            CalibrationMeasurement.station_id.in_(ids)
-        )
-    )
-    calibration = int(r.scalar() or 0)
-    # One COUNT(values) with a huge hash join was ~60s in prod; count per station_id (index).
-    values = 0
+    # ``IN (many ids)`` can devolve into a parallel seq scan on the whole table (~9s+ in prod);
+    # per-station counts use idx_measurements_station_id reliably.
+    measurements = 0
+    for sid in ids:
+        r = await db.execute(select(func.count(Measurement.id)).where(Measurement.station_id == sid))
+        measurements += int(r.scalar() or 0)
+    calibration = 0
     for sid in ids:
         r = await db.execute(
-            select(func.count(Values.id))
-            .select_from(Values)
-            .join(Measurement, Values.measurement_id == Measurement.id)
-            .where(Measurement.station_id == sid)
+            select(func.count(CalibrationMeasurement.id)).where(
+                CalibrationMeasurement.station_id == sid
+            )
         )
-        values += int(r.scalar() or 0)
+        calibration += int(r.scalar() or 0)
+    # Per-station nested-loop plans are fast; parallel hash + seq scan on ``values`` was ~60s for
+    # heavy stations. SET LOCAL is scoped to a savepoint so the rest of the request keeps defaults.
+    values = 0
+    async with db.begin_nested():
+        await db.execute(text("SET LOCAL max_parallel_workers_per_gather = 0"))
+        for sid in ids:
+            r = await db.execute(
+                select(func.count(Values.id))
+                .select_from(Values)
+                .join(Measurement, Values.measurement_id == Measurement.id)
+                .where(Measurement.station_id == sid)
+            )
+            values += int(r.scalar() or 0)
     r = await db.execute(select(func.count(StationStatus.id)).where(StationStatus.station_id.in_(ids)))
     statuses = int(r.scalar() or 0)
     return {
