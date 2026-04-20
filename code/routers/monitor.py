@@ -9,6 +9,7 @@ from sqlalchemy import text
 
 from database import async_engine
 from middleware.request_stats import get_request_stats
+from utils.helpers import format_datetime_vienna_iso
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -20,7 +21,7 @@ async def get_monitor(request: Request):
     Get monitoring data: database usage, API endpoint stats, application metrics.
     """
     result = {
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": format_datetime_vienna_iso(datetime.now(timezone.utc)),
         "version": "0.3",
         "database": await _get_database_metrics(),
         "api": get_request_stats(),

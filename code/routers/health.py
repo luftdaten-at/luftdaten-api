@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from sqlalchemy import text
 from database import async_engine
+from utils.helpers import format_datetime_vienna_iso
 from apscheduler.schedulers.background import BackgroundScheduler
 from datetime import datetime, timezone
 
@@ -27,7 +28,7 @@ async def health_check():
     """
     health_status = {
         "status": "healthy",
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": format_datetime_vienna_iso(datetime.now(timezone.utc)),
         "version": "0.3",
         "checks": {
             "api": "healthy",
@@ -68,6 +69,6 @@ async def simple_health_check():
     """
     return {
         "status": "healthy",
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": format_datetime_vienna_iso(datetime.now(timezone.utc)),
         "version": "0.3"
     }

@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import func, distinct, text, select, cast, String
 from database import get_db, _agent_log, _async_pool_stats
-from utils.helpers import as_naive_utc
+from utils.helpers import as_naive_utc, format_datetime_vienna_iso
 from utils.response_cache import get_statistics_cache
 from dependencies import get_blacklist
 from datetime import datetime, timezone, timedelta
@@ -33,7 +33,7 @@ def _statistics_cache_key(blacklist: frozenset[str]) -> str:
 def _statistics_json_response(data: dict, now: datetime) -> JSONResponse:
     """JSON body with request-time timestamp, ETag over payload excluding timestamp, shared Cache-Control."""
     out = dict(json.loads(json.dumps(data, default=str)))
-    out["timestamp"] = now.isoformat()
+    out["timestamp"] = format_datetime_vienna_iso(now)
     body_etag = {k: v for k, v in out.items() if k != "timestamp"}
     etag_val = hashlib.md5(
         json.dumps(body_etag, sort_keys=True, default=str).encode()
@@ -673,7 +673,7 @@ async def get_statistics(
             status_by_level_dict = {}
 
     statistics = {
-        "timestamp": now.isoformat(),
+        "timestamp": format_datetime_vienna_iso(now),
         "totals": {
             "countries": total_countries,
             "cities": total_cities,
@@ -691,8 +691,12 @@ async def get_statistics(
             "last_30_days": active_stations_30d
         },
         "data_coverage": {
-            "earliest_measurement": earliest_measurement.isoformat() if earliest_measurement else None,
-            "latest_measurement": latest_measurement.isoformat() if latest_measurement else None,
+            "earliest_measurement": format_datetime_vienna_iso(earliest_measurement)
+            if earliest_measurement
+            else None,
+            "latest_measurement": format_datetime_vienna_iso(latest_measurement)
+            if latest_measurement
+            else None,
             "measurements_last_24h": measurements_24h,
             "measurements_last_7d": measurements_7d,
             "measurements_last_30d": measurements_30d

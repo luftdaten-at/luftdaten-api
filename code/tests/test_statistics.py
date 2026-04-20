@@ -9,6 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 from main import app
 from routers.statistics import _statistics_snapshot_response
+from utils.helpers import format_datetime_vienna_iso
 from models import (
     City, Country, Station, Location, Measurement, Values,
     CalibrationMeasurement, StationStatus
@@ -448,10 +449,10 @@ class TestStatisticsRouter:
         # Should be valid ISO format
         datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
         
-        # Should be recent (within last minute)
-        parsed_time = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+        # Should be recent (within last two minutes; timestamps are Europe/Vienna ISO)
+        parsed_time = datetime.fromisoformat(timestamp)
         now = datetime.now(timezone.utc)
-        assert abs((now - parsed_time).total_seconds()) < 60
+        assert abs((now - parsed_time.astimezone(timezone.utc)).total_seconds()) < 120
 
     def test_get_statistics_in_process_cache_hit(self, sample_statistics_data):
         """Second GET within TTL serves from memory cache (same ETag body, fresh timestamp)."""
@@ -478,7 +479,7 @@ class TestStatisticsSnapshotHelpers:
         resp = _statistics_snapshot_response(payload, fixed_now)
         assert resp.status_code == 200
         body = json.loads(resp.body)
-        assert body["timestamp"] == fixed_now.isoformat()
+        assert body["timestamp"] == format_datetime_vienna_iso(fixed_now)
         assert "public" in resp.headers.get("cache-control", "")
         assert "max-age=900" in resp.headers.get("cache-control", "")
         assert resp.headers.get("etag", "").startswith('W/"')

@@ -1,4 +1,4 @@
-from pydantic import BaseModel, RootModel
+from pydantic import BaseModel, RootModel, Field
 from typing import Dict, Optional
 from datetime import datetime
 
@@ -15,7 +15,13 @@ class LocationCreate(BaseModel):
 
 
 class StationDataCreate(BaseModel):
-    time: datetime
+    time: datetime = Field(
+        ...,
+        description=(
+            "Measurement time in UTC. Prefer ISO-8601 with `Z` or explicit offset (e.g. `2026-04-10T12:00:00Z`). "
+            "If no timezone is given, the value is interpreted as UTC wall clock."
+        ),
+    )
     device: str
     firmware: str
     apikey: str

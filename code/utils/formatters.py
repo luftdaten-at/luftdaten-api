@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from models import Station, Location
+from utils.helpers import format_datetime_vienna_iso
 
 
 def standard_output_to_csv(data) -> str:
@@ -24,7 +25,7 @@ def standard_output_to_csv(data) -> str:
     """
     csv_data = "device,time_measured,dimension,value\n"
     for device, time, dim, val in data:
-        csv_data += f"{device},{time.strftime('%Y-%m-%dT%H:%M')},{dim},{val}\n"
+        csv_data += f"{device},{format_datetime_vienna_iso(time, timespec='minutes')},{dim},{val}\n"
     return csv_data
 
 
@@ -44,7 +45,7 @@ async def standard_output_to_json(data, db: AsyncSession, include_location=False
     json_data = [
         {
             "device": device,
-            "time_measured": time.strftime("%Y-%m-%dT%H:%M"),
+            "time_measured": format_datetime_vienna_iso(time, timespec="minutes"),
             "values": [
                 {
                     "dimension": dim,
