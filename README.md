@@ -100,6 +100,13 @@ Stations can be excluded from API responses via a blacklist config file. Blackli
 - Grafana panels filter metrics with `job="<name>"`. The **Luftdaten API** dashboard exposes **API Prometheus job** (from `label_values(http_requests_total, job)`); pick the value that matches your scrape config’s `job_name` (default in repo: `luftdaten-api`). If panels show *No data*, check **Status → Targets** in Prometheus and run `http_requests_total` in **Graph** to see the real `job` label. The app must register **`metrics.default()`** alongside the custom `luftdaten_*` instrumentation (see [`code/main.py`](code/main.py)); otherwise `http_requests_total` and latency histograms are never emitted and Grafana stays empty regardless of `job`.
 - **`handler="none"`** for most traffic: prometheus-fastapi-instrumentator resolves the route **before** inner middleware runs. `/v1/...` must be stripped **outside** that middleware (see `VersionPrefixMiddleware` in [`code/main.py`](code/main.py)); otherwise routes registered as `/station/...` never match and Grafana shows `none` instead of `/station/current`, etc.
 
+**PostgreSQL query diagnostics (slow SQL / index hints):**
+- The `db` service loads **`pg_stat_statements`** via `shared_preload_libraries` (see `docker-compose.yml`). After pulling the change, **restart Postgres** (or recreate the volume) so the setting applies, then run **`alembic upgrade head`** — migration **`7f3a9c2e1d0b`** runs `CREATE EXTENSION IF NOT EXISTS pg_stat_statements`.
+- Existing data directories that were created **without** this `command` need a one-time restart of the `db` container after the compose update; if `CREATE EXTENSION` still errors, ensure `shared_preload_libraries` is active (`SHOW shared_preload_libraries;` in `psql`).
+- **`postgres_exporter`** (monitoring profile) enables **`--collector.stat_statements`** and **`--collector.statio_user_indexes`** with a 40-statement cap. Grafana dashboard **Luftdaten API** adds panels for cumulative time by `queryid`, seq scans by table, time rate, and index block read rate (`job="postgres"`).
+- Map a **`queryid`** back to SQL in `psql`: `SELECT query FROM pg_stat_statements WHERE queryid = <value>;` (large cardinality — do not enable `--collector.stat_statements.include_query` on busy servers without care).
+- App connections set **`application_name`** (override with `POSTGRES_APPLICATION_NAME`). Optional dev-only SQL logging: **`DB_SQL_ECHO=true`** (see `.env.example`).
+
 #### Deployment
 
 Build and push to Dockerhub.

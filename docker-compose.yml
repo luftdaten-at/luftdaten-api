@@ -23,6 +23,13 @@ services:
     image: postgres:16
     # Default 64MB /dev/shm is too small for Postgres under load (avoids DiskFullError on shm resize)
     shm_size: "256mb"
+    # pg_stat_statements (see Alembic 7f3a9c2e1d0b); track_io_timing helps blk_*_time in pg_stat_statements
+    command:
+      - "postgres"
+      - "-c"
+      - "shared_preload_libraries=pg_stat_statements"
+      - "-c"
+      - "track_io_timing=on"
     ports:
      - "5432:5432"
     volumes:
@@ -39,6 +46,12 @@ services:
       start_period: 10s
   db_test:
     image: postgres:16
+    command:
+      - "postgres"
+      - "-c"
+      - "shared_preload_libraries=pg_stat_statements"
+      - "-c"
+      - "track_io_timing=on"
     ports:
       - "5433:5432"
     environment:
@@ -77,6 +90,10 @@ services:
     profiles:
       - monitoring
     image: prometheuscommunity/postgres-exporter:latest
+    command:
+      - "--collector.stat_statements"
+      - "--collector.stat_statements.limit=40"
+      - "--collector.statio_user_indexes"
     environment:
       # DATA_SOURCE_URI must be host:port/db?params only (no postgresql://, no user:pass).
       # See https://github.com/prometheus-community/postgres_exporter#environment-variables

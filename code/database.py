@@ -17,6 +17,13 @@ DB_NAME = os.getenv("POSTGRES_DB", "")
 DATABASE_URL = f"postgresql://{DB_USER}:{DB_PASS}@{DB_HOST}/{DB_NAME}"
 ASYNC_DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
 
+_POSTGRES_APP_NAME = os.getenv("POSTGRES_APPLICATION_NAME", "luftdaten-api")
+_async_connect_args = {
+    "server_settings": {"application_name": _POSTGRES_APP_NAME},
+}
+_sync_connect_args = {"application_name": _POSTGRES_APP_NAME}
+_sqlalchemy_echo = os.getenv("DB_SQL_ECHO", "").lower() in ("1", "true", "yes")
+
 # region agent log
 def _agent_log(
     hypothesis_id: str,
@@ -74,6 +81,8 @@ async_engine = create_async_engine(
     max_overflow=_max_overflow,
     pool_timeout=60,
     pool_pre_ping=True,
+    echo=_sqlalchemy_echo,
+    connect_args=_async_connect_args,
 )
 AsyncSessionLocal = async_sessionmaker(
     async_engine,
@@ -87,6 +96,11 @@ AsyncSessionLocal = async_sessionmaker(
 scheduler_async_engine = create_async_engine(
     ASYNC_DATABASE_URL,
     poolclass=NullPool,
+    connect_args={
+        "server_settings": {
+            "application_name": f"{_POSTGRES_APP_NAME}-scheduler",
+        },
+    },
 )
 SchedulerAsyncSessionLocal = async_sessionmaker(
     scheduler_async_engine,
@@ -97,7 +111,10 @@ SchedulerAsyncSessionLocal = async_sessionmaker(
 )
 
 # Sync engine for Alembic / scripts that still use synchronous SQLAlchemy
-sync_engine = create_engine(DATABASE_URL)
+sync_engine = create_engine(
+    DATABASE_URL,
+    connect_args={**_sync_connect_args, "application_name": f"{_POSTGRES_APP_NAME}-alembic"},
+)
 
 Base = declarative_base()
 
