@@ -58,6 +58,124 @@ async def _try_load_statistics_snapshot(
         return None
 
 
+async def _counts_for_blacklisted_devices(
+    db: AsyncSession, blacklist: frozenset[str]
+) -> dict[str, int]:
+    """Counts only rows tied to blacklisted devices (IN + indexes). Avoids full-table NOT IN scans."""
+    if not blacklist:
+        return {"stations": 0, "measurements": 0, "calibration": 0, "values": 0, "statuses": 0}
+    r = await db.execute(select(func.count(Station.id)).where(Station.device.in_(blacklist)))
+    stations = int(r.scalar() or 0)
+    r = await db.execute(
+        select(func.count(Measurement.id))
+        .select_from(Measurement)
+        .join(Station, Measurement.station_id == Station.id)
+        .where(Station.device.in_(blacklist))
+    )
+    measurements = int(r.scalar() or 0)
+    r = await db.execute(
+        select(func.count(CalibrationMeasurement.id))
+        .select_from(CalibrationMeasurement)
+        .join(Station, CalibrationMeasurement.station_id == Station.id)
+        .where(Station.device.in_(blacklist))
+    )
+    calibration = int(r.scalar() or 0)
+    r = await db.execute(
+        select(func.count(Values.id))
+        .select_from(Values)
+        .join(Measurement, Values.measurement_id == Measurement.id)
+        .join(Station, Measurement.station_id == Station.id)
+        .where(Station.device.in_(blacklist))
+    )
+    values = int(r.scalar() or 0)
+    r = await db.execute(
+        select(func.count(StationStatus.id))
+        .select_from(StationStatus)
+        .join(Station, StationStatus.station_id == Station.id)
+        .where(Station.device.in_(blacklist))
+    )
+    statuses = int(r.scalar() or 0)
+    return {
+        "stations": stations,
+        "measurements": measurements,
+        "calibration": calibration,
+        "values": values,
+        "statuses": statuses,
+    }
+
+
+async def _blacklist_active_station_counts(
+    db: AsyncSession,
+    blacklist: frozenset[str],
+    one_hour_ago,
+    one_day_ago,
+    seven_days_ago,
+    thirty_days_ago,
+) -> tuple[int, int, int, int]:
+    if not blacklist:
+        return (0, 0, 0, 0)
+
+    async def _in_window(since):
+        q = select(func.count(distinct(Station.id))).where(
+            Station.device.in_(blacklist),
+            Station.last_active.isnot(None),
+            Station.last_active >= since,
+        )
+        r = await db.execute(q)
+        return int(r.scalar() or 0)
+
+    return (
+        await _in_window(one_hour_ago),
+        await _in_window(one_day_ago),
+        await _in_window(seven_days_ago),
+        await _in_window(thirty_days_ago),
+    )
+
+
+async def _blacklist_measurement_timeframe_counts(
+    db: AsyncSession,
+    blacklist: frozenset[str],
+    one_day_ago,
+    seven_days_ago,
+    thirty_days_ago,
+) -> tuple[int, int, int]:
+    if not blacklist:
+        return (0, 0, 0)
+
+    async def _cnt(since):
+        q = (
+            select(func.count(Measurement.id))
+            .select_from(Measurement)
+            .join(Station, Measurement.station_id == Station.id)
+            .where(Station.device.in_(blacklist), Measurement.time_measured >= since)
+        )
+        r = await db.execute(q)
+        return int(r.scalar() or 0)
+
+    return (
+        await _cnt(one_day_ago),
+        await _cnt(seven_days_ago),
+        await _cnt(thirty_days_ago),
+    )
+
+
+async def _blacklist_stations_by_source_counts(
+    db: AsyncSession, blacklist: frozenset[str]
+) -> dict[int, int]:
+    if not blacklist:
+        return {}
+    r = await db.execute(
+        select(Station.source, func.count(Station.id))
+        .where(Station.device.in_(blacklist))
+        .group_by(Station.source)
+    )
+    out: dict[int, int] = {}
+    for src, c in r.all():
+        if src is not None:
+            out[int(src)] = int(c or 0)
+    return out
+
+
 @router.get("/", tags=["statistics"])
 async def get_statistics(
     db: AsyncSession = Depends(get_db),
@@ -74,14 +192,13 @@ async def get_statistics(
         if snap is not None:
             return snap
 
-    use_materialized_views = not bool(blacklist)
+    use_materialized_views = False
 
     try:
-        if not use_materialized_views:
-            raise ValueError("skip")
         res = await db.execute(text("SELECT * FROM statistics_summary LIMIT 1"))
         stats_summary = res.first()
         if stats_summary:
+            use_materialized_views = True
             total_countries = stats_summary.total_countries or 0
             total_cities = stats_summary.total_cities or 0
             total_locations = stats_summary.total_locations or 0
@@ -92,6 +209,15 @@ async def get_statistics(
             total_station_statuses = stats_summary.total_station_statuses or 0
             earliest_measurement = stats_summary.earliest_measurement
             latest_measurement = stats_summary.latest_measurement
+            if blacklist:
+                sub = await _counts_for_blacklisted_devices(db, blacklist)
+                total_stations = max(0, total_stations - sub["stations"])
+                total_measurements = max(0, total_measurements - sub["measurements"])
+                total_calibration_measurements = max(
+                    0, total_calibration_measurements - sub["calibration"]
+                )
+                total_values = max(0, total_values - sub["values"])
+                total_station_statuses = max(0, total_station_statuses - sub["statuses"])
         else:
             use_materialized_views = False
     except Exception:
@@ -163,6 +289,14 @@ async def get_statistics(
             active_stations_24h = active_summary.last_24_hours or 0
             active_stations_7d = active_summary.last_7_days or 0
             active_stations_30d = active_summary.last_30_days or 0
+            if blacklist:
+                s1, s24, s7, s30 = await _blacklist_active_station_counts(
+                    db, blacklist, one_hour_ago, one_day_ago, seven_days_ago, thirty_days_ago
+                )
+                active_stations_1h = max(0, active_stations_1h - s1)
+                active_stations_24h = max(0, active_stations_24h - s24)
+                active_stations_7d = max(0, active_stations_7d - s7)
+                active_stations_30d = max(0, active_stations_30d - s30)
         else:
             aq = select(func.count(distinct(Station.id))).where(
                 Station.last_active.isnot(None),
@@ -240,6 +374,13 @@ async def get_statistics(
             measurements_24h = measurements_summary.last_24h or 0
             measurements_7d = measurements_summary.last_7d or 0
             measurements_30d = measurements_summary.last_30d or 0
+            if blacklist:
+                m24, m7, m30 = await _blacklist_measurement_timeframe_counts(
+                    db, blacklist, one_day_ago, seven_days_ago, thirty_days_ago
+                )
+                measurements_24h = max(0, measurements_24h - m24)
+                measurements_7d = max(0, measurements_7d - m7)
+                measurements_30d = max(0, measurements_30d - m30)
         else:
             r = await db.execute(select(func.count(Measurement.id)).where(Measurement.time_measured >= one_day_ago))
             measurements_24h = r.scalar() or 0
@@ -282,6 +423,17 @@ async def get_statistics(
         for source_id, count in source_results:
             if count > 0:
                 stations_by_source[Source.get_name(source_id)] = count
+        if blacklist and stations_by_source:
+            bl_src = await _blacklist_stations_by_source_counts(db, blacklist)
+            for src_id, c in bl_src.items():
+                name = Source.get_name(src_id)
+                if name not in stations_by_source:
+                    continue
+                new_c = stations_by_source[name] - c
+                if new_c <= 0:
+                    del stations_by_source[name]
+                else:
+                    stations_by_source[name] = new_c
     except Exception:
         await db.rollback()
         stations_by_source = {}
