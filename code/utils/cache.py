@@ -8,6 +8,8 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 import logging
 
+from utils.response_cache import get_statistics_cache
+
 logger = logging.getLogger(__name__)
 
 
@@ -27,6 +29,7 @@ async def refresh_statistics_views(db: AsyncSession):
     try:
         await db.execute(text("SELECT refresh_statistics_views()"))
         await db.commit()
+        get_statistics_cache().invalidate("statistics:v1")
         logger.info("Statistics materialized views refreshed successfully")
         return True
     except Exception as e:

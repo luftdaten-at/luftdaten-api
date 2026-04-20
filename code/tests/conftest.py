@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 from main import app
 from database import get_db, Base
 from db_testing import test_sync_engine, TestAsyncSessionLocal
+from utils.response_cache import get_statistics_cache
 
 
 @pytest.fixture(scope="session")
@@ -21,6 +22,7 @@ def test_client():
 def setup_database():
     """Setup and teardown database for each test"""
     Base.metadata.create_all(bind=test_sync_engine)
+    get_statistics_cache().invalidate("statistics:v1")
     yield
     try:
         Base.metadata.drop_all(bind=test_sync_engine)

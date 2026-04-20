@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import func, distinct, text, select, cast, String
 from database import get_db, _agent_log, _async_pool_stats
 from utils.helpers import as_naive_utc
+from utils.response_cache import get_statistics_cache
 from dependencies import get_blacklist
 from datetime import datetime, timezone, timedelta
 from typing import Optional
@@ -18,16 +19,20 @@ from enums import Source, SensorModel, Dimension
 
 router = APIRouter()
 
-_STATISTICS_CACHE_CONTROL = "public, max-age=3600, stale-while-revalidate=120"
+_STATISTICS_CACHE_CONTROL = "public, max-age=900, stale-while-revalidate=120"
 
 
-def _statistics_snapshot_response(payload: object, now: datetime) -> JSONResponse:
-    """Build HTTP response from precomputed jsonb snapshot; timestamp reflects request time."""
-    if isinstance(payload, str):
-        data = json.loads(payload)
-    else:
-        data = json.loads(json.dumps(payload, default=str))
-    out = dict(data)
+def _statistics_cache_key(blacklist: frozenset[str]) -> str:
+    """Stable in-process cache key; varies with blacklist so subtracted counts stay correct."""
+    if not blacklist:
+        return "statistics:v1"
+    digest = hashlib.sha256(",".join(sorted(blacklist)).encode()).hexdigest()[:24]
+    return f"statistics:v1:bl:{digest}"
+
+
+def _statistics_json_response(data: dict, now: datetime) -> JSONResponse:
+    """JSON body with request-time timestamp, ETag over payload excluding timestamp, shared Cache-Control."""
+    out = dict(json.loads(json.dumps(data, default=str)))
     out["timestamp"] = now.isoformat()
     body_etag = {k: v for k, v in out.items() if k != "timestamp"}
     etag_val = hashlib.md5(
@@ -40,6 +45,15 @@ def _statistics_snapshot_response(payload: object, now: datetime) -> JSONRespons
             "ETag": f'W/"{etag_val}"',
         },
     )
+
+
+def _statistics_snapshot_response(payload: object, now: datetime) -> JSONResponse:
+    """Build HTTP response from precomputed jsonb snapshot; timestamp reflects request time."""
+    if isinstance(payload, str):
+        data = json.loads(payload)
+    else:
+        data = json.loads(json.dumps(payload, default=str))
+    return _statistics_json_response(data, now)
 
 
 async def _try_load_statistics_snapshot(
@@ -91,11 +105,14 @@ async def _counts_for_blacklisted_devices(
             )
         )
         calibration += int(r.scalar() or 0)
-    # Per-station nested-loop plans are fast; parallel hash + seq scan on ``values`` was ~60s for
-    # heavy stations. SET LOCAL is scoped to a savepoint so the rest of the request keeps defaults.
+    # Per-station nested-loop (measurements → values index) is ~1s for moderate stations; without
+    # hints Postgres may choose hash join + seq scan on ``values`` (~100s+) for huge station_id.
+    # Disable hash/merge join inside this savepoint only (reverts when nested tx ends).
     values = 0
     async with db.begin_nested():
         await db.execute(text("SET LOCAL max_parallel_workers_per_gather = 0"))
+        await db.execute(text("SET LOCAL enable_hashjoin = off"))
+        await db.execute(text("SET LOCAL enable_mergejoin = off"))
         for sid in ids:
             r = await db.execute(
                 select(func.count(Values.id))
@@ -199,9 +216,16 @@ async def get_statistics(
     seven_days_ago = as_naive_utc(now - timedelta(days=7))
     thirty_days_ago = as_naive_utc(now - timedelta(days=30))
 
+    cache = get_statistics_cache()
+    cache_key = _statistics_cache_key(blacklist)
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return _statistics_json_response(json.loads(cached.decode("utf-8")), now)
+
     if not blacklist:
         snap = await _try_load_statistics_snapshot(db, now)
         if snap is not None:
+            cache.set(cache_key, snap.body.decode("utf-8"))
             return snap
 
     use_materialized_views = False
@@ -684,4 +708,5 @@ async def get_statistics(
         "dimensions": dimensions_list
     }
 
-    return statistics
+    cache.set(cache_key, json.dumps(statistics, default=str).encode("utf-8"))
+    return _statistics_json_response(statistics, now)
