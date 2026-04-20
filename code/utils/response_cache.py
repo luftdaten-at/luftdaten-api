@@ -119,6 +119,7 @@ class ResponseCache:
 # Global cache instances with 5 minutes default TTL
 _cities_cache = ResponseCache(ttl=300)  # 5 minutes
 _stations_cache = ResponseCache(ttl=300)  # 5 minutes
+_statistics_cache = ResponseCache(ttl=900)  # 15 minutes (GET /statistics/)
 
 
 def get_cities_cache() -> ResponseCache:
@@ -139,3 +140,8 @@ def get_stations_cache() -> ResponseCache:
         The global ResponseCache instance for stations
     """
     return _stations_cache
+
+
+def get_statistics_cache() -> ResponseCache:
+    """In-memory cache for GET /statistics/ (15 minute TTL)."""
+    return _statistics_cache

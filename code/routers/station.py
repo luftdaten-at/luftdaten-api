@@ -4,8 +4,10 @@ import json
 import io
 import logging
 import numpy as np
-from fastapi import APIRouter, Depends, Response, HTTPException, Query, Request
+import asyncpg
+from fastapi import APIRouter, Depends, Response, HTTPException, Query, Request, status
 from dependencies import get_blacklist
+from sqlalchemy.exc import DBAPIError, OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import func, or_, text, case, select, tuple_
 from sqlalchemy.orm import selectinload
@@ -23,6 +25,40 @@ from enums import Precision, OutputFormat, Order, Dimension, CURRENT_TIME_RANGE_
 router = APIRouter()
 
 _STATION_CURRENT_CACHE_CONTROL = "public, max-age=60, stale-while-revalidate=120"
+
+
+def _iter_exception_causes(exc: BaseException):
+    if isinstance(exc, BaseExceptionGroup):
+        for sub in exc.exceptions:
+            yield from _iter_exception_causes(sub)
+        return
+    yield exc
+    if exc.__cause__ is not None:
+        yield from _iter_exception_causes(exc.__cause__)
+
+
+def _raise_http_503_if_db_unavailable(exc: BaseException) -> None:
+    """Postgres restart / refuse connections → 503 instead of 500 or MV→slow fallback."""
+    for e in _iter_exception_causes(exc):
+        if isinstance(
+            e,
+            (
+                asyncpg.exceptions.CannotConnectNowError,
+                asyncpg.exceptions.TooManyConnectionsError,
+            ),
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Database temporarily unavailable; retry shortly.",
+            ) from exc
+        if isinstance(e, (OperationalError, DBAPIError)):
+            orig = getattr(e, "orig", None)
+            msg = (str(orig) if orig is not None else str(e)).lower()
+            if "shutting down" in msg or "cannot connect now" in msg:
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="Database temporarily unavailable; retry shortly.",
+                ) from exc
 
 
 def _if_none_match_etag(if_none_match: str | None, etag: str) -> bool:
@@ -696,33 +732,39 @@ async def get_all_stations(
             use_materialized_view = False
     except Exception as e:
         await db.rollback()
+        _raise_http_503_if_db_unavailable(e)
         use_materialized_view = False
         logging.getLogger(__name__).debug(f"Materialized view not available, using direct queries: {e}")
 
     if not use_materialized_view:
-        stmt = select(Station).options(selectinload(Station.location))
-        if blacklist:
-            stmt = stmt.where(~Station.device.in_(blacklist))
-        r = await db.execute(stmt)
-        stations = r.scalars().all()
+        try:
+            stmt = select(Station).options(selectinload(Station.location))
+            if blacklist:
+                stmt = stmt.where(~Station.device.in_(blacklist))
+            r = await db.execute(stmt)
+            stations = r.scalars().all()
 
-        result = []
-        for station in stations:
-            cr = await db.execute(
-                select(func.count(Measurement.id)).where(Measurement.station_id == station.id)
-            )
-            measurements_count = cr.scalar() or 0
+            result = []
+            for station in stations:
+                cr = await db.execute(
+                    select(func.count(Measurement.id)).where(Measurement.station_id == station.id)
+                )
+                measurements_count = cr.scalar() or 0
 
-            station_data = {
-                "id": station.device,
-                "last_active": station.last_active,
-                "location": {
-                    "lat": station.location.lat if station.location else None,
-                    "lon": station.location.lon if station.location else None
-                },
-                "measurements_count": measurements_count
-            }
-            result.append(station_data)
+                station_data = {
+                    "id": station.device,
+                    "last_active": station.last_active,
+                    "location": {
+                        "lat": station.location.lat if station.location else None,
+                        "lon": station.location.lon if station.location else None
+                    },
+                    "measurements_count": measurements_count
+                }
+                result.append(station_data)
+        except Exception as e:
+            await db.rollback()
+            _raise_http_503_if_db_unavailable(e)
+            raise
 
     if output_format == "json":
         json_result = []

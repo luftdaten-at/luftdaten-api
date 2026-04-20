@@ -453,6 +453,15 @@ class TestStatisticsRouter:
         now = datetime.now(timezone.utc)
         assert abs((now - parsed_time).total_seconds()) < 60
 
+    def test_get_statistics_in_process_cache_hit(self, sample_statistics_data):
+        """Second GET within TTL serves from memory cache (same ETag body, fresh timestamp)."""
+        r1 = client.get("/v1/statistics/")
+        r2 = client.get("/v1/statistics/")
+        assert r1.status_code == 200 and r2.status_code == 200
+        assert "max-age=900" in (r1.headers.get("cache-control") or "")
+        assert r1.json()["totals"] == r2.json()["totals"]
+        assert r1.headers.get("etag") == r2.headers.get("etag")
+
 
 class TestStatisticsSnapshotHelpers:
     """Precomputed jsonb snapshot response (used when statistics_endpoint_snapshot exists)."""
@@ -471,7 +480,7 @@ class TestStatisticsSnapshotHelpers:
         body = json.loads(resp.body)
         assert body["timestamp"] == fixed_now.isoformat()
         assert "public" in resp.headers.get("cache-control", "")
-        assert "max-age=3600" in resp.headers.get("cache-control", "")
+        assert "max-age=900" in resp.headers.get("cache-control", "")
         assert resp.headers.get("etag", "").startswith('W/"')
 
     def test_statistics_snapshot_response_accepts_json_string_payload(self):
