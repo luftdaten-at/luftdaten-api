@@ -29,6 +29,7 @@
 | GET | `/v1/station/all` | All stations metadata (CSV or JSON). |
 | POST | `/v1/station/data` | Ingest measurement payload (JSON body). |
 | POST | `/v1/station/status` | Ingest station status events (JSON body). |
+| POST | `/v1/station/apikey` | **Admin only.** Set `apikey` for a station by `device`. |
 
 ### `GET /v1/station/calibration`
 
@@ -153,6 +154,29 @@ Aliases: `POST /v1/station/data/` (hidden from schema, same handler).
 Returns `{"status": "success"}`.
 
 Aliases: `POST /v1/station/status/` (hidden from schema).
+
+---
+
+### `POST /v1/station/apikey`
+
+**Admin only.** Sets `stations.apikey` for the given `device`.
+
+**Headers (required):**
+
+- `Authorization: Bearer <ADMIN_API_KEY>` — value must match the **`ADMIN_API_KEY`** environment variable on the server.
+
+**Body (JSON):**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `device` | string | Station device id (`stations.device`). |
+| `new_apikey` | string | New API key; minimum length **16** by default (override with **`STATION_APIKEY_MIN_LENGTH`**). |
+
+**Responses:** `200` + `{"status":"success"}`; **`503`** if `ADMIN_API_KEY` is not configured; **`401`** if the Bearer token is missing or wrong; **`404`** if the station does not exist; **`422`** if validation fails (e.g. key too short).
+
+Use **HTTPS** in production; rotate `ADMIN_API_KEY` via your secrets manager.
+
+Aliases: `POST /v1/station/apikey/` (hidden from schema).
 
 ---
 

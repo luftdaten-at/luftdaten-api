@@ -1,6 +1,10 @@
+import os
+
 from pydantic import BaseModel, RootModel, Field
 from typing import Dict, Optional
 from datetime import datetime
+
+_STATION_APIKEY_MIN_LEN = int(os.getenv("STATION_APIKEY_MIN_LENGTH", "16"))
 
 
 class ValueCreate(BaseModel):
@@ -43,3 +47,15 @@ class StationStatusCreate(BaseModel):
     time: datetime
     level: int
     message: str
+
+
+class StationApiKeyAdminSet(BaseModel):
+    """Admin-only body to set ``stations.apikey`` for a device (requires ``Authorization: Bearer`` admin token)."""
+
+    device: str = Field(..., min_length=1, description="Station device id (`stations.device`).")
+    new_apikey: str = Field(
+        ...,
+        min_length=_STATION_APIKEY_MIN_LEN,
+        max_length=512,
+        description=f"New station API key (min {_STATION_APIKEY_MIN_LEN} chars; override with STATION_APIKEY_MIN_LENGTH).",
+    )
