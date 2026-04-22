@@ -417,3 +417,80 @@ class TestStationRouter:
     def test_get_station_history_old_endpoint(self, sample_data):
         response = client.get("/v1/station/history")
         assert response.status_code == 200
+
+
+class TestStationAdminApiKey:
+    _ADMIN_TOKEN = "admin-test-token-16chars"
+
+    def test_admin_set_apikey_503_when_not_configured(self, monkeypatch, sample_data):
+        monkeypatch.delenv("ADMIN_API_KEY", raising=False)
+        response = client.post(
+            "/v1/station/apikey",
+            json={"device": "test_station_1", "new_apikey": "n" * 16},
+            headers={"Authorization": f"Bearer {self._ADMIN_TOKEN}"},
+        )
+        assert response.status_code == 503
+        assert "not configured" in response.json()["detail"].lower()
+
+    def test_admin_set_apikey_401_missing_bearer(self, monkeypatch, sample_data):
+        monkeypatch.setenv("ADMIN_API_KEY", self._ADMIN_TOKEN)
+        response = client.post(
+            "/v1/station/apikey",
+            json={"device": "test_station_1", "new_apikey": "n" * 16},
+        )
+        assert response.status_code == 401
+
+    def test_admin_set_apikey_401_wrong_token(self, monkeypatch, sample_data):
+        monkeypatch.setenv("ADMIN_API_KEY", self._ADMIN_TOKEN)
+        response = client.post(
+            "/v1/station/apikey",
+            json={"device": "test_station_1", "new_apikey": "n" * 16},
+            headers={"Authorization": "Bearer wrong-token-value-16"},
+        )
+        assert response.status_code == 401
+
+    def test_admin_set_apikey_404_unknown_device(self, monkeypatch, sample_data):
+        monkeypatch.setenv("ADMIN_API_KEY", self._ADMIN_TOKEN)
+        response = client.post(
+            "/v1/station/apikey",
+            json={"device": "no_such_device_xyz", "new_apikey": "n" * 16},
+            headers={"Authorization": f"Bearer {self._ADMIN_TOKEN}"},
+        )
+        assert response.status_code == 404
+
+    def test_admin_set_apikey_422_short_new_key(self, monkeypatch, sample_data):
+        monkeypatch.setenv("ADMIN_API_KEY", self._ADMIN_TOKEN)
+        response = client.post(
+            "/v1/station/apikey",
+            json={"device": "test_station_1", "new_apikey": "tooshort"},
+            headers={"Authorization": f"Bearer {self._ADMIN_TOKEN}"},
+        )
+        assert response.status_code == 422
+
+    def test_admin_set_apikey_success(self, monkeypatch, sample_data):
+        monkeypatch.setenv("ADMIN_API_KEY", self._ADMIN_TOKEN)
+        new_key = "new-station-key-at-least-16"
+        response = client.post(
+            "/v1/station/apikey",
+            json={"device": "test_station_1", "new_apikey": new_key},
+            headers={"Authorization": f"Bearer {self._ADMIN_TOKEN}"},
+        )
+        assert response.status_code == 200
+        assert response.json() == {"status": "success"}
+        db = TestSyncSessionLocal()
+        try:
+            r = db.execute(select(Station).where(Station.device == "test_station_1"))
+            st = r.scalar_one()
+            assert st.apikey == new_key
+        finally:
+            db.close()
+
+    def test_admin_set_apikey_trailing_slash(self, monkeypatch, sample_data):
+        monkeypatch.setenv("ADMIN_API_KEY", self._ADMIN_TOKEN)
+        new_key = "another-new-key-16chars!"
+        response = client.post(
+            "/v1/station/apikey/",
+            json={"device": "test_station_1", "new_apikey": new_key},
+            headers={"Authorization": f"Bearer {self._ADMIN_TOKEN}"},
+        )
+        assert response.status_code == 200

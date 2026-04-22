@@ -7,11 +7,24 @@ This module handles station creation and updates.
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-from fastapi import HTTPException
+from fastapi import HTTPException, status
 from models import Station, Location
 from schemas import StationDataCreate
 from .geocoding import get_or_create_location
 from .helpers import as_naive_utc
+
+
+async def update_station_apikey_admin(db: AsyncSession, device: str, new_apikey: str) -> None:
+    """Set ``apikey`` for an existing station (admin-only caller must be enforced by router)."""
+    r = await db.execute(select(Station).where(Station.device == device))
+    db_station = r.scalar_one_or_none()
+    if db_station is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Station not found",
+        )
+    db_station.apikey = new_apikey
+    await db.commit()
 
 
 async def get_or_create_station(db: AsyncSession, station: StationDataCreate):

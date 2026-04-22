@@ -6,7 +6,7 @@ import logging
 import numpy as np
 import asyncpg
 from fastapi import APIRouter, Depends, Response, HTTPException, Query, Request, status
-from dependencies import get_blacklist
+from dependencies import get_blacklist, verify_admin_api_key
 from sqlalchemy.exc import DBAPIError, OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import func, or_, text, case, select, tuple_
@@ -17,9 +17,10 @@ from database import get_db
 from collections import defaultdict
 
 from models import Station, Location, Measurement, CalibrationMeasurement, Values, StationStatus, City
-from schemas import StationDataCreate, SensorsCreate, StationStatusCreate
+from schemas import StationDataCreate, SensorsCreate, StationStatusCreate, StationApiKeyAdminSet
 from utils import (
     get_or_create_station,
+    update_station_apikey_admin,
     standard_output_to_csv,
     standard_output_to_json,
     as_naive_utc,
@@ -546,6 +547,22 @@ async def create_station_data(
 
     await db.commit()
 
+    return {"status": "success"}
+
+
+@router.post("/apikey", tags=["station"])
+@router.post("/apikey/", tags=["station"], include_in_schema=False)
+async def admin_set_station_apikey(
+    body: StationApiKeyAdminSet,
+    db: AsyncSession = Depends(get_db),
+    _admin: None = Depends(verify_admin_api_key),
+):
+    """
+    Set the station API key for ``device`` (admin only).
+
+    Requires ``Authorization: Bearer <ADMIN_API_KEY>`` and ``ADMIN_API_KEY`` in the server environment.
+    """
+    await update_station_apikey_admin(db, body.device, body.new_apikey)
     return {"status": "success"}
 
 
