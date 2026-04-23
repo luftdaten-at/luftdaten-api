@@ -5,6 +5,7 @@ Human-readable reference for the HTTP API exposed by **luftdaten-api** (FastAPI)
 | Resource | Guide |
 |----------|--------|
 | Full route list (methods, paths, parameters, responses) | [endpoints.md](endpoints.md) |
+| OpenAPI / FastAPI documentation best practices (maintainer guide) | [fastapi-documentation/README.md](fastapi-documentation/README.md) |
 | Database (tables, views, indexes) | [database/README.md](database/README.md) |
 
 ## Interactive OpenAPI
