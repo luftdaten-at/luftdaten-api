@@ -3,7 +3,7 @@ import logging
 import numpy as np
 from geopy.geocoders import Nominatim
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
-from dependencies import get_blacklist
+from dependencies import get_blacklist, verify_admin_api_key
 from sqlalchemy import func, distinct, select, cast, String
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -12,6 +12,8 @@ from utils.helpers import as_naive_utc, format_datetime_vienna_iso
 from datetime import datetime, timezone, timedelta
 from models import City, Country, Station, Measurement, Values, Location
 from enums import Dimension
+from schemas import CityAdminSet
+from utils import update_city_admin
 from utils.response_cache import get_cities_cache
 
 
@@ -173,3 +175,19 @@ async def get_average_measurements_by_city(
     }
 
     return Response(content=json.dumps(j), media_type="application/geo+json")
+
+
+@router.post("/admin", tags=["city"])
+@router.post("/admin/", tags=["city"], include_in_schema=False)
+async def admin_update_city(
+    body: CityAdminSet,
+    db: AsyncSession = Depends(get_db),
+    _admin: None = Depends(verify_admin_api_key),
+):
+    """
+    Admin-only: update an existing city by current ``slug`` (set ``Authorization: Bearer <ADMIN_API_KEY>``).
+    The new ``slug`` is generated from ``name`` (slugify), matching ``City`` creation behavior.
+    """
+    await update_city_admin(db, body)
+    get_cities_cache().invalidate("cities_all")
+    return {"status": "success"}

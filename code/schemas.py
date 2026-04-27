@@ -59,3 +59,23 @@ class StationApiKeyAdminSet(BaseModel):
         max_length=512,
         description=f"New station API key (min {_STATION_APIKEY_MIN_LEN} chars; override with STATION_APIKEY_MIN_LENGTH).",
     )
+
+
+class CityAdminSet(BaseModel):
+    """Admin-only body to update a city record (requires Bearer admin token).
+
+    The current ``slug`` identifies the city; the new ``slug`` is regenerated
+    from ``name`` via slugify, matching ``City.__init__`` behavior.
+    """
+
+    slug: str = Field(..., min_length=1, description="Current slug of the city to update.")
+    name: str = Field(..., min_length=1, max_length=255)
+    tz: str = Field(..., min_length=1, description="IANA timezone, e.g. 'Europe/Vienna'.")
+    lat: float = Field(..., ge=-90, le=90)
+    lon: float = Field(..., ge=-180, le=180)
+    country_code: str = Field(
+        ...,
+        min_length=2,
+        max_length=3,
+        description="ISO country code (cities.country_id resolved via countries.code).",
+    )

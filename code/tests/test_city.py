@@ -5,6 +5,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pytest
 from fastapi.testclient import TestClient
+from slugify import slugify
+from sqlalchemy import select
 from main import app
 from models import City, Country, Station, Location, Measurement, Values
 from db_testing import TestSyncSessionLocal
@@ -246,3 +248,149 @@ class TestCityRouter:
 
         values = data["properties"]["values"]
         assert len(values) > 0
+
+
+class TestCityAdminUpdate:
+    _ADMIN_TOKEN = "admin-test-token-16chars"
+
+    _valid_body = {
+        "slug": "vienna",
+        "name": "Vienna Renamed",
+        "tz": "Europe/Vienna",
+        "lat": 48.2,
+        "lon": 16.37,
+        "country_code": "AT",
+    }
+
+    def test_admin_update_city_503_when_not_configured(self, monkeypatch, sample_data):
+        monkeypatch.delenv("ADMIN_API_KEY", raising=False)
+        response = client.post(
+            "/v1/city/admin",
+            json=self._valid_body,
+            headers={"Authorization": f"Bearer {self._ADMIN_TOKEN}"},
+        )
+        assert response.status_code == 503
+        assert "not configured" in response.json()["detail"].lower()
+
+    def test_admin_update_city_401_missing_bearer(self, monkeypatch, sample_data):
+        monkeypatch.setenv("ADMIN_API_KEY", self._ADMIN_TOKEN)
+        response = client.post(
+            "/v1/city/admin",
+            json=self._valid_body,
+        )
+        assert response.status_code == 401
+
+    def test_admin_update_city_401_wrong_token(self, monkeypatch, sample_data):
+        monkeypatch.setenv("ADMIN_API_KEY", self._ADMIN_TOKEN)
+        response = client.post(
+            "/v1/city/admin",
+            json=self._valid_body,
+            headers={"Authorization": "Bearer wrong-token-value-16"},
+        )
+        assert response.status_code == 401
+
+    def test_admin_update_city_404_unknown_slug(self, monkeypatch, sample_data):
+        monkeypatch.setenv("ADMIN_API_KEY", self._ADMIN_TOKEN)
+        body = {**self._valid_body, "slug": "no-such-city-slug-xyz"}
+        response = client.post(
+            "/v1/city/admin",
+            json=body,
+            headers={"Authorization": f"Bearer {self._ADMIN_TOKEN}"},
+        )
+        assert response.status_code == 404
+        assert "city" in response.json()["detail"].lower()
+
+    def test_admin_update_city_404_unknown_country_code(self, monkeypatch, sample_data):
+        monkeypatch.setenv("ADMIN_API_KEY", self._ADMIN_TOKEN)
+        body = {**self._valid_body, "country_code": "ZZ"}
+        response = client.post(
+            "/v1/city/admin",
+            json=body,
+            headers={"Authorization": f"Bearer {self._ADMIN_TOKEN}"},
+        )
+        assert response.status_code == 404
+        assert "country" in response.json()["detail"].lower()
+
+    def test_admin_update_city_422_invalid_lat(self, monkeypatch, sample_data):
+        monkeypatch.setenv("ADMIN_API_KEY", self._ADMIN_TOKEN)
+        body = {**self._valid_body, "lat": 200}
+        response = client.post(
+            "/v1/city/admin",
+            json=body,
+            headers={"Authorization": f"Bearer {self._ADMIN_TOKEN}"},
+        )
+        assert response.status_code == 422
+
+    def test_admin_update_city_success(self, monkeypatch, sample_data):
+        monkeypatch.setenv("ADMIN_API_KEY", self._ADMIN_TOKEN)
+        new_name = "Vienna Admin Updated"
+        body = {**self._valid_body, "name": new_name}
+        response = client.get("/v1/city/all")
+        assert response.status_code == 200
+        assert get_cities_cache().get("cities_all") is not None
+        response = client.post(
+            "/v1/city/admin",
+            json=body,
+            headers={"Authorization": f"Bearer {self._ADMIN_TOKEN}"},
+        )
+        assert response.status_code == 200
+        assert response.json() == {"status": "success"}
+        assert get_cities_cache().get("cities_all") is None
+        db = TestSyncSessionLocal()
+        try:
+            r = db.execute(select(City).where(City.name == new_name))
+            c = r.scalar_one()
+            assert c.slug == slugify(new_name)
+            assert c.tz == "Europe/Vienna"
+            assert c.lat == 48.2
+            assert c.lon == 16.37
+            assert c.country_id == sample_data["country"].id
+        finally:
+            db.close()
+
+    def test_admin_update_city_trailing_slash(self, monkeypatch, sample_data):
+        monkeypatch.setenv("ADMIN_API_KEY", self._ADMIN_TOKEN)
+        new_name = "Vienna Trailing"
+        body = {
+            "slug": "vienna",
+            "name": new_name,
+            "tz": "Europe/Vienna",
+            "lat": 48.3,
+            "lon": 16.4,
+            "country_code": "AT",
+        }
+        response = client.post(
+            "/v1/city/admin/",
+            json=body,
+            headers={"Authorization": f"Bearer {self._ADMIN_TOKEN}"},
+        )
+        assert response.status_code == 200
+
+    def test_admin_update_city_409_slug_conflict(self, monkeypatch, sample_data):
+        monkeypatch.setenv("ADMIN_API_KEY", self._ADMIN_TOKEN)
+        db = sample_data["_db"]
+        munich = City(
+            name="Munich",
+            country_id=sample_data["country"].id,
+            tz="Europe/Berlin",
+            lat=48.1,
+            lon=11.5,
+        )
+        db.add(munich)
+        db.commit()
+        assert munich.slug == "munich"
+        body = {
+            "slug": "vienna",
+            "name": "Munich",
+            "tz": "Europe/Vienna",
+            "lat": 48.2,
+            "lon": 16.37,
+            "country_code": "AT",
+        }
+        response = client.post(
+            "/v1/city/admin",
+            json=body,
+            headers={"Authorization": f"Bearer {self._ADMIN_TOKEN}"},
+        )
+        assert response.status_code == 409
+        assert "slug" in response.json()["detail"].lower()
