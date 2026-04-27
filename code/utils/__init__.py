@@ -11,7 +11,7 @@ This package contains utility functions organized by functionality:
 """
 
 # Import all functions to maintain backward compatibility
-from .geocoding import reverse_geocode, get_or_create_location
+from .geocoding import reverse_geocode, get_or_create_location, update_city_admin
 from .stations import get_or_create_station, update_station_apikey_admin
 from .formatters import standard_output_to_csv, standard_output_to_json
 from .http import download_csv
@@ -22,6 +22,7 @@ from .response_cache import get_cities_cache, get_stations_cache, get_statistics
 __all__ = [
     'reverse_geocode',
     'get_or_create_location',
+    'update_city_admin',
     'get_or_create_station',
     'update_station_apikey_admin',
     'standard_output_to_csv',

@@ -7,11 +7,15 @@ using Nominatim geocoding service.
 
 from geopy.geocoders import Nominatim
 from timezonefinder import TimezoneFinder
+from slugify import slugify
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+from fastapi import HTTPException, status
 from models import City, Country, Location
 import logging
+from schemas import CityAdminSet
 from .response_cache import get_cities_cache
 
 # Initialize TimezoneFinder
@@ -142,3 +146,40 @@ async def get_or_create_location(db: AsyncSession, lat: float, lon: float, heigh
             raise
 
     return location
+
+
+async def update_city_admin(db: AsyncSession, body: CityAdminSet) -> None:
+    """Update an existing city by current slug (admin-only caller must be enforced by router)."""
+    r = await db.execute(select(City).where(City.slug == body.slug))
+    db_city = r.scalar_one_or_none()
+    if db_city is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="City not found",
+        )
+
+    code = body.country_code.strip().upper()
+    r = await db.execute(select(Country).where(Country.code == code))
+    country = r.scalar_one_or_none()
+    if country is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Country not found",
+        )
+
+    new_slug = slugify(body.name)
+    db_city.name = body.name
+    db_city.slug = new_slug
+    db_city.tz = body.tz
+    db_city.lat = body.lat
+    db_city.lon = body.lon
+    db_city.country_id = country.id
+
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="City slug already exists",
+        ) from None
