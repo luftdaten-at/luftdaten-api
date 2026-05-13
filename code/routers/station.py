@@ -26,6 +26,7 @@ from utils import (
     as_naive_utc,
     max_as_naive_utc,
     format_datetime_vienna_iso,
+    json_safe_optional_float,
 )
 from enums import Precision, OutputFormat, Order, Dimension, CURRENT_TIME_RANGE_MINUTES
 
@@ -387,7 +388,7 @@ async def get_current_station_data(
                 values = measurement.values
                 sensors.append({
                     "sensor_model": measurement.sensor_model,
-                    "values": [{"dimension": value.dimension, "value": value.value} for value in values]
+                    "values": [{"dimension": value.dimension, "value": json_safe_optional_float(value.value)} for value in values]
                 })
 
             calibration_sensors = []
@@ -396,7 +397,7 @@ async def get_current_station_data(
                     calibration_values = calibration_measurement.values
                     calibration_sensors.append({
                         "sensor_model": calibration_measurement.sensor_model,
-                        "values": [{"dimension": value.dimension, "value": value.value} for value in calibration_values]
+                        "values": [{"dimension": value.dimension, "value": json_safe_optional_float(value.value)} for value in calibration_values]
                     })
 
             features.append({
@@ -420,7 +421,7 @@ async def get_current_station_data(
             "type": "FeatureCollection",
             "features": features,
         }
-        content = json.dumps(payload)
+        content = json.dumps(payload, allow_nan=False)
         media_type = "application/geo+json"
 
     elif output_format == "csv":

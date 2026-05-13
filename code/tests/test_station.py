@@ -138,6 +138,26 @@ class TestStationRouter:
         assert "sensors" in feature["properties"]
         assert len(feature["properties"]["sensors"]) > 0
 
+    def test_get_current_station_data_geojson_nan_value_is_json_null(self, sample_data):
+        db = sample_data["_db"]
+        value_row = sample_data["values"][0]
+        value_row.value = float("nan")
+        db.commit()
+
+        response = client.get("/v1/station/current")
+        assert response.status_code == 200
+        data = json.loads(response.text)
+        assert data["type"] == "FeatureCollection"
+        feature = data["features"][0]
+        pm1 = Dimension.PM1_0
+        found = False
+        for sensor in feature["properties"]["sensors"]:
+            for item in sensor["values"]:
+                if item["dimension"] == pm1:
+                    assert item["value"] is None
+                    found = True
+        assert found, "expected PM1_0 entry with null value after NaN in DB"
+
     def test_get_current_station_data_csv_format(self, sample_data):
         response = client.get("/v1/station/current?output_format=csv")
         assert response.status_code == 200

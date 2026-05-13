@@ -4,6 +4,7 @@ General helper utilities.
 This module contains general-purpose helper functions.
 """
 
+import math
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
@@ -41,6 +42,15 @@ def max_as_naive_utc(a: datetime, b: datetime) -> datetime:
     a_aware = a.replace(tzinfo=timezone.utc) if a.tzinfo is None else a.astimezone(timezone.utc)
     b_aware = b.replace(tzinfo=timezone.utc) if b.tzinfo is None else b.astimezone(timezone.utc)
     return max(a_aware, b_aware).replace(tzinfo=None)
+
+
+def json_safe_optional_float(x):
+    """Return ``x`` for JSON output; map non-finite floats (NaN, ±inf) to ``None`` (RFC 8259)."""
+    if x is None:
+        return None
+    if isinstance(x, float) and not math.isfinite(x):
+        return None
+    return x
 
 
 def float_default(x, default=None):
