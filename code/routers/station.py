@@ -710,7 +710,14 @@ where s.last_active = m.time_measured"""
         data_list = r.all()
 
     if output_format == 'csv':
-        return Response(content=standard_output_to_csv(data_list), media_type="text/csv")
+        return Response(
+            content=standard_output_to_csv(
+                data_list,
+                value_decimal_places=2,
+                include_dimension_name=True,
+            ),
+            media_type="text/csv",
+        )
     elif output_format == 'json':
         return Response(
             content=await standard_output_to_json(data_list, db, include_location=include_location),

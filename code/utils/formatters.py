@@ -4,29 +4,64 @@ Output formatting utilities.
 This module provides functions to format data as CSV or JSON.
 """
 
+import csv
 import json
+from io import StringIO
 from itertools import groupby
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from models import Station, Location
 from utils.helpers import format_datetime_vienna_iso
+from enums import Dimension
 
 
-def standard_output_to_csv(data) -> str:
+def _csv_cell_value(val, value_decimal_places: int | None) -> str | int | float:
+    """Stringify a measurement value for CSV; optional fixed decimal places."""
+    if value_decimal_places is None:
+        return val if val is not None else f"{val}"
+    if val is None:
+        return ""
+    return f"{float(val):.{value_decimal_places}f}"
+
+
+def standard_output_to_csv(
+    data,
+    *,
+    value_decimal_places: int | None = None,
+    include_dimension_name: bool = False,
+) -> str:
     """
     Convert data to CSV format.
 
     Args:
         data: list of tuples (Station.device, Measurement.time_measured, Values.dimension, Values.value)
+        value_decimal_places: If set, numeric values are rounded to this many fractional digits.
+        include_dimension_name: If True, adds a dimension_name column (from Dimension.get_name).
 
     Returns:
-        CSV string with header: device,time_measured,dimension,value
+        CSV string with header: device,time_measured,dimension[,dimension_name],value
     """
-    csv_data = "device,time_measured,dimension,value\n"
+    buf = StringIO()
+    writer = csv.writer(buf)
+    header = ["device", "time_measured", "dimension"]
+    if include_dimension_name:
+        header.append("dimension_name")
+    header.append("value")
+    writer.writerow(header)
+
     for device, time, dim, val in data:
-        csv_data += f"{device},{format_datetime_vienna_iso(time, timespec='minutes')},{dim},{val}\n"
-    return csv_data
+        row = [
+            device,
+            format_datetime_vienna_iso(time, timespec="minutes"),
+            dim,
+        ]
+        if include_dimension_name:
+            row.append(Dimension.get_name(dim))
+        row.append(_csv_cell_value(val, value_decimal_places))
+        writer.writerow(row)
+
+    return buf.getvalue()
 
 
 async def standard_output_to_json(data, db: AsyncSession, include_location=False):
