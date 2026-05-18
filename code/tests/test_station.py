@@ -399,8 +399,21 @@ class TestStationRouter:
     def test_get_historical_station_data(self, sample_data):
         response = client.get("/v1/station/historical?station_ids=test_station_1&output_format=csv")
         assert response.status_code == 200
-        lines = response.text.strip().split('\n')
-        assert len(lines) > 0
+        rows = list(csv.reader(io.StringIO(response.text.strip())))
+        assert len(rows) > 1
+        assert rows[0] == [
+            "device",
+            "time_measured",
+            "dimension",
+            "dimension_name",
+            "value",
+        ]
+        by_dim = {int(r[2]): r for r in rows[1:]}
+        assert len(by_dim) == 3
+        assert by_dim[Dimension.PM1_0][3] == Dimension.get_name(Dimension.PM1_0)
+        assert by_dim[Dimension.PM1_0][4] == "10.50"
+        assert by_dim[Dimension.PM2_5][4] == "5.20"
+        assert by_dim[Dimension.TEMPERATURE][4] == "22.00"
 
     def test_get_historical_station_data_current(self, sample_data):
         response = client.get(
@@ -408,6 +421,14 @@ class TestStationRouter:
         )
         assert response.status_code == 200
         assert "test_station_1" in response.text
+        header = next(csv.reader(io.StringIO(response.text.strip())))
+        assert header == [
+            "device",
+            "time_measured",
+            "dimension",
+            "dimension_name",
+            "value",
+        ]
 
     def test_get_historical_station_data_missing_station_ids(self, sample_data):
         response = client.get("/v1/station/historical?output_format=csv")
