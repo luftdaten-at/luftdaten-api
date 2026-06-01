@@ -1,6 +1,6 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import func, distinct, text, select, cast, String
+from sqlalchemy import func, distinct, text, select
 from database import get_db, _agent_log, _async_pool_stats
 from utils.helpers import as_naive_utc, format_datetime_vienna_iso
 from utils.response_cache import get_statistics_cache
@@ -30,10 +30,18 @@ def _statistics_cache_key(blacklist: frozenset[str]) -> str:
     return f"statistics:v1:bl:{digest}"
 
 
+def _normalize_snapshot_payload(payload: object) -> dict:
+    """Coerce jsonb (dict or JSON string) into a plain dict for caching and response."""
+    if isinstance(payload, str):
+        return json.loads(payload)
+    if isinstance(payload, dict):
+        return payload
+    return json.loads(json.dumps(payload, default=str))
+
+
 def _statistics_json_response(data: dict, now: datetime) -> JSONResponse:
     """JSON body with request-time timestamp, ETag over payload excluding timestamp, shared Cache-Control."""
-    out = dict(json.loads(json.dumps(data, default=str)))
-    out["timestamp"] = format_datetime_vienna_iso(now)
+    out = {**data, "timestamp": format_datetime_vienna_iso(now)}
     body_etag = {k: v for k, v in out.items() if k != "timestamp"}
     etag_val = hashlib.md5(
         json.dumps(body_etag, sort_keys=True, default=str).encode()
@@ -47,18 +55,7 @@ def _statistics_json_response(data: dict, now: datetime) -> JSONResponse:
     )
 
 
-def _statistics_snapshot_response(payload: object, now: datetime) -> JSONResponse:
-    """Build HTTP response from precomputed jsonb snapshot; timestamp reflects request time."""
-    if isinstance(payload, str):
-        data = json.loads(payload)
-    else:
-        data = json.loads(json.dumps(payload, default=str))
-    return _statistics_json_response(data, now)
-
-
-async def _try_load_statistics_snapshot(
-    db: AsyncSession, now: datetime
-) -> Optional[JSONResponse]:
+async def _try_load_statistics_snapshot(db: AsyncSession) -> Optional[dict]:
     try:
         res = await db.execute(
             text("SELECT payload FROM statistics_endpoint_snapshot WHERE id = 1")
@@ -66,7 +63,7 @@ async def _try_load_statistics_snapshot(
         row = res.first()
         if row is None or row.payload is None:
             return None
-        return _statistics_snapshot_response(row.payload, now)
+        return _normalize_snapshot_payload(row.payload)
     except Exception:
         await db.rollback()
         return None
@@ -223,10 +220,13 @@ async def get_statistics(
         return _statistics_json_response(json.loads(cached.decode("utf-8")), now)
 
     if not blacklist:
-        snap = await _try_load_statistics_snapshot(db, now)
-        if snap is not None:
-            cache.set(cache_key, snap.body.decode("utf-8"))
-            return snap
+        snapshot_payload = await _try_load_statistics_snapshot(db)
+        if snapshot_payload is not None:
+            cache.set(
+                cache_key,
+                json.dumps(snapshot_payload, default=str).encode("utf-8"),
+            )
+            return _statistics_json_response(snapshot_payload, now)
 
     use_materialized_views = False
 
@@ -265,7 +265,7 @@ async def get_statistics(
         _agent_log(
             "H3",
             "statistics.py:get_statistics:fallback",
-            "live_count_branch",
+            "statistics_summary_unavailable",
             {
                 "use_materialized_views": use_materialized_views,
                 "blacklist_nonempty": bool(blacklist),
@@ -273,47 +273,10 @@ async def get_statistics(
             },
         )
         # endregion
-        r = await db.execute(select(func.count(Country.id)))
-        total_countries = r.scalar() or 0
-        r = await db.execute(select(func.count(City.id)))
-        total_cities = r.scalar() or 0
-        r = await db.execute(select(func.count(Location.id)))
-        total_locations = r.scalar() or 0
-        sq = select(func.count(Station.id))
-        if blacklist:
-            sq = sq.where(~Station.device.in_(blacklist))
-        r = await db.execute(sq)
-        total_stations = r.scalar() or 0
-        if blacklist:
-            r = await db.execute(
-                select(func.count(Measurement.id)).join(Station).where(~Station.device.in_(blacklist))
-            )
-            total_measurements = r.scalar() or 0
-            r = await db.execute(
-                select(func.count(CalibrationMeasurement.id)).join(Station).where(~Station.device.in_(blacklist))
-            )
-            total_calibration_measurements = r.scalar() or 0
-            r = await db.execute(
-                select(func.count(Values.id)).join(Measurement).join(Station).where(~Station.device.in_(blacklist))
-            )
-            total_values = r.scalar() or 0
-            r = await db.execute(
-                select(func.count(StationStatus.id)).join(Station).where(~Station.device.in_(blacklist))
-            )
-            total_station_statuses = r.scalar() or 0
-        else:
-            r = await db.execute(select(func.count(Measurement.id)))
-            total_measurements = r.scalar() or 0
-            r = await db.execute(select(func.count(CalibrationMeasurement.id)))
-            total_calibration_measurements = r.scalar() or 0
-            r = await db.execute(select(func.count(Values.id)))
-            total_values = r.scalar() or 0
-            r = await db.execute(select(func.count(StationStatus.id)))
-            total_station_statuses = r.scalar() or 0
-        r = await db.execute(select(func.min(Measurement.time_measured)))
-        earliest_measurement = r.scalar()
-        r = await db.execute(select(func.max(Measurement.time_measured)))
-        latest_measurement = r.scalar()
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Statistics cache is refreshing; retry shortly.",
+        )
 
     try:
         if not use_materialized_views:
@@ -602,31 +565,7 @@ async def get_statistics(
         dimensions_list.sort(key=lambda x: x['value_count'], reverse=True)
     except Exception:
         await db.rollback()
-        r = await db.execute(
-            select(
-                Values.dimension,
-                func.count(Values.id).label('count'),
-                func.avg(Values.value).label('avg_value'),
-                func.min(Values.value).label('min_value'),
-                func.max(Values.value).label('max_value')
-            ).where(
-                Values.value.isnot(None),
-                cast(Values.value, String) != 'nan'
-            ).group_by(Values.dimension)
-        )
-        dimensions_dist = r.all()
         dimensions_list = []
-        for dim_id, count, avg_val, min_val, max_val in dimensions_dist:
-            dimensions_list.append({
-                "dimension_id": dim_id,
-                "dimension_name": Dimension.get_name(dim_id),
-                "unit": Dimension.get_unit(dim_id),
-                "value_count": count,
-                "average_value": safe_float(avg_val),
-                "min_value": safe_float(min_val),
-                "max_value": safe_float(max_val)
-            })
-        dimensions_list.sort(key=lambda x: x['value_count'], reverse=True)
 
     try:
         res = await db.execute(text("SELECT sensor_model, count FROM calibration_sensors_summary"))
