@@ -10,6 +10,13 @@ from main import app
 from database import get_db, Base
 from db_testing import test_sync_engine, TestAsyncSessionLocal
 from utils.response_cache import get_statistics_cache
+_tests_dir = os.path.dirname(os.path.abspath(__file__))
+if _tests_dir not in sys.path:
+    sys.path.insert(0, _tests_dir)
+from statistics_mv_setup import (
+    drop_statistics_materialized_views,
+    ensure_statistics_materialized_views,
+)
 
 
 @pytest.fixture(scope="session")
@@ -22,9 +29,11 @@ def test_client():
 def setup_database():
     """Setup and teardown database for each test"""
     Base.metadata.create_all(bind=test_sync_engine)
+    ensure_statistics_materialized_views(test_sync_engine)
     get_statistics_cache().invalidate("statistics:v1")
     yield
     try:
+        drop_statistics_materialized_views(test_sync_engine)
         Base.metadata.drop_all(bind=test_sync_engine)
     except Exception:
         pass

@@ -8,13 +8,23 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 from main import app
-from routers.statistics import _statistics_snapshot_response
+from unittest.mock import AsyncMock, patch
+
+from routers.statistics import _statistics_json_response
 from utils.helpers import format_datetime_vienna_iso
+from utils.response_cache import get_statistics_cache
 from models import (
     City, Country, Station, Location, Measurement, Values,
     CalibrationMeasurement, StationStatus
 )
-from db_testing import TestSyncSessionLocal
+from db_testing import TestSyncSessionLocal, test_sync_engine
+_tests_dir = os.path.dirname(os.path.abspath(__file__))
+if _tests_dir not in sys.path:
+    sys.path.insert(0, _tests_dir)
+from statistics_mv_setup import (
+    drop_statistics_materialized_views,
+    ensure_statistics_materialized_views,
+)
 from datetime import datetime, timezone, timedelta
 from enums import SensorModel, Dimension, Source
 
@@ -233,6 +243,7 @@ def sample_statistics_data():
     db.add(status2)
     db.add(status3)
     db.commit()
+    ensure_statistics_materialized_views(test_sync_engine)
 
     try:
         yield {
@@ -463,11 +474,41 @@ class TestStatisticsRouter:
         assert r1.json()["totals"] == r2.json()["totals"]
         assert r1.headers.get("etag") == r2.headers.get("etag")
 
+    def test_get_statistics_returns_503_when_summary_missing(self):
+        drop_statistics_materialized_views(test_sync_engine)
+        get_statistics_cache().invalidate("statistics:v1")
+        response = client.get("/v1/statistics/")
+        assert response.status_code == 503
+        assert "refreshing" in response.json()["detail"].lower()
+
+    @patch("routers.statistics._try_load_statistics_snapshot", new_callable=AsyncMock)
+    def test_snapshot_path_stores_in_process_cache_as_bytes(self, mock_load):
+        payload = {
+            "totals": {"countries": 1, "cities": 0, "locations": 0, "stations": 0,
+                       "measurements": 0, "calibration_measurements": 0, "values": 0,
+                       "station_statuses": 0},
+            "active_stations": {"last_hour": 0, "last_24_hours": 0, "last_7_days": 0, "last_30_days": 0},
+            "data_coverage": {},
+            "distribution": {},
+            "dimensions": [],
+        }
+        mock_load.return_value = payload
+        cache = get_statistics_cache()
+        cache.invalidate("statistics:v1")
+        r1 = client.get("/v1/statistics/")
+        assert r1.status_code == 200
+        cached = cache.get("statistics:v1")
+        assert isinstance(cached, bytes)
+        assert json.loads(cached.decode("utf-8"))["totals"] == payload["totals"]
+        r2 = client.get("/v1/statistics/")
+        assert r2.status_code == 200
+        assert mock_load.await_count == 1
+
 
 class TestStatisticsSnapshotHelpers:
-    """Precomputed jsonb snapshot response (used when statistics_endpoint_snapshot exists)."""
+    """JSON response helper for statistics payloads (snapshot and MV assembly)."""
 
-    def test_statistics_snapshot_response_sets_timestamp_and_http_cache_headers(self):
+    def test_statistics_json_response_sets_timestamp_and_http_cache_headers(self):
         fixed_now = datetime(2026, 4, 10, 12, 0, 0, tzinfo=timezone.utc)
         payload = {
             "totals": {"countries": 1},
@@ -476,7 +517,7 @@ class TestStatisticsSnapshotHelpers:
             "distribution": {},
             "dimensions": [],
         }
-        resp = _statistics_snapshot_response(payload, fixed_now)
+        resp = _statistics_json_response(payload, fixed_now)
         assert resp.status_code == 200
         body = json.loads(resp.body)
         assert body["timestamp"] == format_datetime_vienna_iso(fixed_now)
@@ -484,18 +525,20 @@ class TestStatisticsSnapshotHelpers:
         assert "max-age=900" in resp.headers.get("cache-control", "")
         assert resp.headers.get("etag", "").startswith('W/"')
 
-    def test_statistics_snapshot_response_accepts_json_string_payload(self):
-        now = datetime.now(timezone.utc)
-        payload = json.dumps(
-            {
-                "totals": {},
-                "active_stations": {},
-                "data_coverage": {},
-                "distribution": {},
-                "dimensions": [],
-            }
-        )
-        resp = _statistics_snapshot_response(payload, now)
-        body = json.loads(resp.body)
-        assert "timestamp" in body
+    def test_statistics_json_response_stable_etag_fresh_timestamp(self):
+        payload = {
+            "totals": {"countries": 2},
+            "active_stations": {"last_hour": 0, "last_24_hours": 0, "last_7_days": 0, "last_30_days": 0},
+            "data_coverage": {},
+            "distribution": {},
+            "dimensions": [],
+        }
+        t1 = datetime(2026, 4, 10, 12, 0, 0, tzinfo=timezone.utc)
+        t2 = datetime(2026, 4, 10, 12, 5, 0, tzinfo=timezone.utc)
+        r1 = _statistics_json_response(payload, t1)
+        r2 = _statistics_json_response(payload, t2)
+        b1 = json.loads(r1.body)
+        b2 = json.loads(r2.body)
+        assert b1["timestamp"] != b2["timestamp"]
+        assert r1.headers.get("etag") == r2.headers.get("etag")
 
