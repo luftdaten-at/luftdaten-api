@@ -310,6 +310,44 @@ class TestStationRouter:
         finally:
             db.close()
 
+    def test_post_station_data_location_change_without_city_name(self):
+        """Existing station moving coords when reverse geocode has country but no city must not 500."""
+        station_data = {
+            "device": "test_device_brussels",
+            "location": {"lat": 48.2082, "lon": 16.3738, "height": 100.5},
+            "time": "2024-04-29T08:25:20.766Z",
+            "firmware": "1.0",
+            "apikey": "testapikey123",
+        }
+        sensors = {"1": {"type": 1, "data": {"2": 5.0, "3": 6.0}}}
+
+        response = client.post("/v1/station/data", json={"station": station_data, "sensors": sensors})
+        assert response.status_code == 200
+
+        station_data["location"] = {"lat": 50.8353, "lon": 4.38886, "height": 120.0}
+        station_data["time"] = "2024-04-29T09:25:20.766Z"
+        sensors = {"1": {"type": 1, "data": {"2": 7.0, "3": 8.0}}}
+
+        with patch("utils.geocoding.reverse_geocode") as mock_reverse_geocode:
+            mock_reverse_geocode.return_value = (None, "Belgium", "be")
+            response = client.post("/v1/station/data", json={"station": station_data, "sensors": sensors})
+
+        assert response.status_code == 200
+        assert response.json() == {"status": "success"}
+
+        db = TestSyncSessionLocal()
+        try:
+            r = db.execute(select(Station).where(Station.device == "test_device_brussels"))
+            station = r.scalar_one()
+            r = db.execute(select(Location).where(Location.id == station.location_id))
+            location = r.scalar_one()
+            assert location.lat == 50.8353
+            assert location.lon == 4.38886
+            assert location.city_id is None
+            assert location.country_id is not None
+        finally:
+            db.close()
+
     def test_post_station_status_success(self):
         mock_tf = MagicMock()
         mock_tf.timezone_at.return_value = 'Europe/Vienna'

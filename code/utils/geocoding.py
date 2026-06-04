@@ -21,6 +21,33 @@ from .response_cache import get_cities_cache
 # Initialize TimezoneFinder
 tf = TimezoneFinder()
 
+NOMINATIM_KWARGS = {
+    "user_agent": "api.luftdaten.at",
+    "domain": "nominatim.dataplexity.eu",
+    "scheme": "https",
+}
+
+LOCALITY_KEYS = (
+    "city",
+    "town",
+    "village",
+    "municipality",
+    "borough",
+    "suburb",
+    "locality",
+    "hamlet",
+    "county",
+)
+
+
+def _locality_from_address(address: dict) -> str | None:
+    """Return the best available locality name from a Nominatim address dict."""
+    for key in LOCALITY_KEYS:
+        value = address.get(key)
+        if value:
+            return value
+    return None
+
 
 def reverse_geocode(lat, lon):
     """
@@ -33,17 +60,115 @@ def reverse_geocode(lat, lon):
     Returns:
         Tuple of (city_name, country_name, country_code) or (None, None, None) if not found
     """
-    geolocator = Nominatim(user_agent="api.luftdaten.at", domain="nominatim.dataplexity.eu", scheme="https")
+    geolocator = Nominatim(**NOMINATIM_KWARGS)
     location = geolocator.reverse((lat, lon), exactly_one=True)
 
-    if location and 'address' in location.raw:
-        address = location.raw['address']
-        city = address.get('city', None) or address.get('town', None) or address.get('village', None)
-        country = address.get('country', None)
-        country_code = address.get('country_code', None)
+    if location and "address" in location.raw:
+        address = location.raw["address"]
+        city = _locality_from_address(address)
+        country = address.get("country", None)
+        country_code = address.get("country_code", None)
         return city, country, country_code
 
     return None, None, None
+
+
+def _city_coords(geolocator: Nominatim, city_name: str, lat: float, lon: float) -> tuple[float, float]:
+    """Forward-geocode city name; fall back to station coordinates if lookup fails."""
+    result = geolocator.geocode(city_name)
+    if result is not None:
+        return result.latitude, result.longitude
+    return float(lat), float(lon)
+
+
+async def _get_or_create_country(
+    db: AsyncSession, country_name: str, country_code: str | None
+) -> Country:
+    r = await db.execute(select(Country).where(Country.name == country_name))
+    country = r.scalar_one_or_none()
+    if country is not None:
+        return country
+    try:
+        country = Country(name=country_name, code=country_code)
+        db.add(country)
+        await db.commit()
+        logging.debug(f"Neues Land erstellt: {country}")
+        return country
+    except Exception as e:
+        logging.error(f"Fehler beim Erstellen des Landes '{country_name}': {e}")
+        await db.rollback()
+        raise
+
+
+async def _get_or_create_city(
+    db: AsyncSession,
+    geolocator: Nominatim,
+    city_name: str,
+    country: Country,
+    lat: float,
+    lon: float,
+) -> City:
+    r = await db.execute(
+        select(City).where(City.name == city_name, City.country_id == country.id)
+    )
+    city = r.scalar_one_or_none()
+    if city is not None:
+        return city
+    try:
+        timezone_str = tf.timezone_at(lng=float(lon), lat=float(lat))
+        clat, clon = _city_coords(geolocator, city_name, lat, lon)
+        city = City(name=city_name, country_id=country.id, tz=timezone_str, lat=clat, lon=clon)
+        db.add(city)
+        await db.commit()
+        logging.debug(f"Neue Stadt erstellt: {city}")
+
+        cache = get_cities_cache()
+        cache.invalidate("cities_all")
+        return city
+    except Exception as e:
+        logging.error(f"Fehler beim Erstellen der Stadt '{city_name}': {e}")
+        await db.rollback()
+        raise
+
+
+async def _persist_location(
+    db: AsyncSession,
+    location: Location | None,
+    lat: float,
+    lon: float,
+    height: float,
+    city_id: int | None,
+    country_id: int | None,
+) -> Location:
+    if location:
+        logging.debug(f"Aktualisiere bestehende Location mit ID {location.id}")
+        location.city_id = city_id
+        location.country_id = country_id
+        try:
+            await db.commit()
+            logging.debug(f"Location aktualisiert: {location}")
+        except Exception as e:
+            logging.error(f"Fehler beim Aktualisieren der Location: {e}")
+            await db.rollback()
+            raise
+        return location
+
+    try:
+        location = Location(
+            lat=lat,
+            lon=lon,
+            height=height,
+            city_id=city_id,
+            country_id=country_id,
+        )
+        db.add(location)
+        await db.commit()
+        logging.debug(f"Neue Location erstellt: {location}")
+    except Exception as e:
+        logging.error(f"Fehler beim Erstellen der Location: {e}")
+        await db.rollback()
+        raise
+    return location
 
 
 async def get_or_create_location(db: AsyncSession, lat: float, lon: float, height: float):
@@ -83,69 +208,30 @@ async def get_or_create_location(db: AsyncSession, lat: float, lon: float, heigh
         logging.error(f"Fehler bei reverse_geocode: {e}")
         raise
 
-    r = await db.execute(select(Country).where(Country.name == country_name))
-    country = r.scalar_one_or_none()
-    if country is None:
-        try:
-            country = Country(name=country_name, code=country_code)
-            db.add(country)
-            await db.commit()
-            logging.debug(f"Neues Land erstellt: {country}")
-        except Exception as e:
-            logging.error(f"Fehler beim Erstellen des Landes '{country_name}': {e}")
-            await db.rollback()
-            raise
+    if not country_name:
+        logging.warning(
+            "reverse_geocode lieferte kein Land für lat=%s lon=%s; Location ohne Stadt/Land",
+            lat,
+            lon,
+        )
+        return await _persist_location(db, location, lat, lon, height, None, None)
 
-    r = await db.execute(
-        select(City).where(City.name == city_name, City.country_id == country.id)
-    )
-    city = r.scalar_one_or_none()
-    if city is None:
-        try:
-            timezone_str = tf.timezone_at(lng=float(lon), lat=float(lat))
+    country = await _get_or_create_country(db, country_name, country_code)
 
-            clat, clon = Nominatim(user_agent="api.luftdaten.at", domain="nominatim.dataplexity.eu", scheme="https").geocode(city_name)[1]
-            city = City(name=city_name, country_id=country.id, tz=timezone_str, lat=clat, lon=clon)
-            db.add(city)
-            await db.commit()
-            logging.debug(f"Neue Stadt erstellt: {city}")
-
-            cache = get_cities_cache()
-            cache.invalidate("cities_all")
-        except Exception as e:
-            logging.error(f"Fehler beim Erstellen der Stadt '{city_name}': {e}")
-            await db.rollback()
-            raise
-
-    if location:
-        logging.debug(f"Aktualisiere bestehende Location mit ID {location.id}")
-        location.city_id = city.id
-        location.country_id = country.id
-        try:
-            await db.commit()
-            logging.debug(f"Location aktualisiert: {location}")
-        except Exception as e:
-            logging.error(f"Fehler beim Aktualisieren der Location: {e}")
-            await db.rollback()
-            raise
+    city_id = None
+    if city_name:
+        geolocator = Nominatim(**NOMINATIM_KWARGS)
+        city = await _get_or_create_city(db, geolocator, city_name, country, lat, lon)
+        city_id = city.id
     else:
-        try:
-            location = Location(
-                lat=lat,
-                lon=lon,
-                height=height,
-                city_id=city.id,
-                country_id=country.id
-            )
-            db.add(location)
-            await db.commit()
-            logging.debug(f"Neue Location erstellt: {location}")
-        except Exception as e:
-            logging.error(f"Fehler beim Erstellen der Location: {e}")
-            await db.rollback()
-            raise
+        logging.warning(
+            "reverse_geocode lieferte keine Stadt für lat=%s lon=%s; Location nur mit Land %s",
+            lat,
+            lon,
+            country_name,
+        )
 
-    return location
+    return await _persist_location(db, location, lat, lon, height, city_id, country.id)
 
 
 async def update_city_admin(db: AsyncSession, body: CityAdminSet) -> None:
