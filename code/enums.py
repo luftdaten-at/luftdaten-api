@@ -22,6 +22,23 @@ class Dimension():
     NO2 = 16
     SGP40_RAW_GAS = 17
     SGP40_ADJUSTED_GAS = 18
+    ADJUSTED_TEMP_CUBE = 19
+    UVS = 20
+    LIGHT = 21
+    ALTITUDE = 22
+    UVI = 23
+    LUX = 24
+    ACCELERATION_X = 25
+    ACCELERATION_Y = 26
+    ACCELERATION_Z = 27
+    GYRO_X = 28
+    GYRO_Y = 29
+    GYRO_Z = 30
+    THERMAL_ARRAY = 31
+    VISIBLE = 32
+    INFRARED = 33
+    FULL_SPECTRUM = 34
+    RAW_LUMINOSITY = 35
 
     # Dictionary für die Einheiten der Dimensionen
     _units = {
@@ -43,6 +60,15 @@ class Dimension():
         NO2: "ppb",
         SGP40_RAW_GAS: "Ω",
         SGP40_ADJUSTED_GAS: "Ω",
+        ADJUSTED_TEMP_CUBE: "°C",
+        ACCELERATION_X: "m/s²",
+        ACCELERATION_Y: "m/s²",
+        ACCELERATION_Z: "m/s²",
+        GYRO_X: "radians/s",
+        GYRO_Y: "radians/s",
+        GYRO_Z: "radians/s",
+        UVI: "UV Index",
+        LUX: "lx",
     }
 
     _names = {
@@ -64,6 +90,19 @@ class Dimension():
         NO2: "Nitrogen Dioxide (NO2)",
         SGP40_RAW_GAS: "SGP40 Raw Gas",
         SGP40_ADJUSTED_GAS: "SGP40 Adjusted Gas",
+        ADJUSTED_TEMP_CUBE: "Adjusted Temperature Air Cube",
+        UVS: "UVS",
+        LIGHT: "Light",
+        ALTITUDE: "Altitude",
+        UVI: "UV Index",
+        LUX: "Lux",
+        ACCELERATION_X: "acceleration X",
+        ACCELERATION_Y: "acceleration Y",
+        ACCELERATION_Z: "acceleration Z",
+        GYRO_X: "gyro X",
+        GYRO_Y: "gyro Y",
+        GYRO_Z: "gyro Z",
+        THERMAL_ARRAY: "Thermal Image",
     }
 
     _sensor_community_names = {
@@ -152,6 +191,18 @@ class SensorModel():
     SPS30 = 15
     PMS5003 = 16
     PMS7003 = 17
+    VIRTUAL_SENSOR = 18
+    LTR390 = 19
+    BMP388 = 20
+    BMP390 = 21
+    LSM6DS = 22
+    SEN66 = 23
+    MLX90640 = 24
+    TSL2591 = 25
+    SEN63C = 26
+    SEN62 = 27
+    BMP581 = 28
+    SHTC3 = 29
 
     _names = {
         SEN5X: "SEN5X",
@@ -170,7 +221,19 @@ class SensorModel():
         SHT35: "SHT35",
         SPS30: "SPS30",
         PMS5003: "PMS5003",
-        PMS7003: "PMS7003"
+        PMS7003: "PMS7003",
+        VIRTUAL_SENSOR: "VIRTUAL_SENSOR",
+        LTR390: "LTR390",
+        BMP388: "BMP388",
+        BMP390: "BMP390",
+        LSM6DS: "lsm6ds",
+        SEN66: "SEN66",
+        MLX90640: "MLX90640",
+        TSL2591: "TSL_2591",
+        SEN63C: "SEN63C",
+        SEN62: "SEN62",
+        BMP581: "BMP581",
+        SHTC3: "SHTC3",
     }
 
     _manufacturer = {
@@ -190,7 +253,15 @@ class SensorModel():
         SHT35: "Sensirion",
         SPS30: "Sensirion",
         PMS5003: "Plantower",
-        PMS7003: "Plantower"
+        PMS7003: "Plantower",
+        VIRTUAL_SENSOR: "Luftdaten.at",
+        SEN66: "Sensirion",
+        MLX90640: "Mouser Electronics",
+        TSL2591: "ams OSRAM",
+        SEN63C: "Sensirion",
+        SEN62: "Sensirion",
+        BMP581: "Bosch Sensortec",
+        SHTC3: "Sensirion",
     }
 
     @classmethod
