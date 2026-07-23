@@ -155,6 +155,10 @@ cython_debug/
 
 # docker compose production environment
 docker-compose.prod.yml
+
+# Agent debug logs (e.g. debug_58b986.ndjson from database instrumentation)
+debug_*.ndjson
+
 # import script
 code/sensor_community_archive/csv
 code/sensor_community_archive/log.txt
