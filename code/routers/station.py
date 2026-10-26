@@ -727,7 +727,7 @@ where s.last_active = m.time_measured"""
 
 @router.get("/all", response_class=Response, tags=["station"])
 async def get_all_stations(
-    output_format: str = Query(default="csv", enum=["json", "csv"], description="Output format: 'csv' or 'json'. Default is 'csv'."),
+    output_format: OutputFormat = Query(OutputFormat.CSV, description="Output format: 'csv' or 'json'. Default is 'csv'."),
     db: AsyncSession = Depends(get_db),
     blacklist: frozenset[str] = Depends(get_blacklist)
 ):
