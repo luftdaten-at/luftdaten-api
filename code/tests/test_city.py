@@ -4,6 +4,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pytest
+from unittest.mock import MagicMock, patch
 from fastapi.testclient import TestClient
 from slugify import slugify
 from sqlalchemy import select
@@ -193,7 +194,21 @@ class TestCityRouter:
         sample_data["city"].lon = None
         db.commit()
 
-        response = client.get("/v1/city/current?city_slug=vienna")
+        geolocator = MagicMock()
+        geolocator.geocode.return_value = ("Vienna, Austria", (48.2082, 16.3738))
+
+        with patch("routers.city.Nominatim", return_value=geolocator):
+            response = client.get("/v1/city/current?city_slug=vienna")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["geometry"]["coordinates"] == [16.3738, 48.2082]
+        geolocator.geocode.assert_called_once_with("vienna")
+
+        db.expire_all()
+        db.refresh(sample_data["city"])
+        assert sample_data["city"].lat == 48.2082
+        assert sample_data["city"].lon == 16.3738
 
     def test_get_current_measurements_old_data(self, sample_data):
         db = sample_data["_db"]
