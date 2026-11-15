@@ -38,7 +38,7 @@ pluggy==1.7.0
 prometheus-fastapi-instrumentator==8.1.0
 prometheus_client==0.26.0
 prompt_toolkit==3.0.53
-psycopg2-binary==2.9.13
+psycopg[binary]==3.3.9
 pycparser==3.12
 pydantic==2.14.3
 pydantic_core==2.50.4

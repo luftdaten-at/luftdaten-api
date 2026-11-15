@@ -14,8 +14,8 @@ DB_PASS = os.getenv("POSTGRES_PASSWORD", "")
 DB_HOST = os.getenv("DB_HOST", "")
 DB_NAME = os.getenv("POSTGRES_DB", "")
 
-DATABASE_URL = f"postgresql://{DB_USER}:{DB_PASS}@{DB_HOST}/{DB_NAME}"
-ASYNC_DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
+DATABASE_URL = f"postgresql+psycopg://{DB_USER}:{DB_PASS}@{DB_HOST}/{DB_NAME}"
+ASYNC_DATABASE_URL = DATABASE_URL.replace("postgresql+psycopg://", "postgresql+asyncpg://", 1)
 
 _POSTGRES_APP_NAME = os.getenv("POSTGRES_APPLICATION_NAME", "luftdaten-api")
 _async_connect_args = {
