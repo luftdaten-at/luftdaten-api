@@ -12,9 +12,9 @@ from sqlalchemy.pool import NullPool
 _TEST_PG_HOST = os.getenv("TEST_POSTGRES_HOST", "db_test")
 _TEST_PG_PORT = os.getenv("TEST_POSTGRES_PORT", "5432")
 SYNC_URL = (
-    f"postgresql://test_user:test_password@{_TEST_PG_HOST}:{_TEST_PG_PORT}/test_database"
+    f"postgresql+psycopg://test_user:test_password@{_TEST_PG_HOST}:{_TEST_PG_PORT}/test_database"
 )
-ASYNC_URL = SYNC_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
+ASYNC_URL = SYNC_URL.replace("postgresql+psycopg://", "postgresql+asyncpg://", 1)
 
 _test_connect = {"application_name": "luftdaten-api-test"}
 _test_async_connect = {"server_settings": {"application_name": "luftdaten-api-test"}}
